@@ -1,0 +1,42 @@
+set(PROJECT_CPM_VERSION 0.42.0)
+set(PROJECT_CPM_URL "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${PROJECT_CPM_VERSION}/CPM.cmake")
+
+if(NOT CPM_SOURCE_CACHE AND DEFINED ENV{CPM_SOURCE_CACHE})
+  set(CPM_SOURCE_CACHE "$ENV{CPM_SOURCE_CACHE}")
+endif()
+
+set(PROJECT_CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${PROJECT_CPM_VERSION}.cmake")
+
+set(_project_cpm_download FALSE)
+if(EXISTS "${PROJECT_CPM_DOWNLOAD_LOCATION}")
+  file(SIZE "${PROJECT_CPM_DOWNLOAD_LOCATION}" PROJECT_CPM_FILE_SIZE)
+  if(PROJECT_CPM_FILE_SIZE EQUAL 0)
+    set(_project_cpm_download TRUE)
+  endif()
+else()
+  set(_project_cpm_download TRUE)
+endif()
+
+if(_project_cpm_download)
+  message(STATUS "Downloading CPM.cmake v${PROJECT_CPM_VERSION}...")
+  file(
+    DOWNLOAD
+    "${PROJECT_CPM_URL}"
+    "${PROJECT_CPM_DOWNLOAD_LOCATION}"
+    TLS_VERIFY ON
+    STATUS PROJECT_CPM_DOWNLOAD_STATUS
+  )
+
+  list(GET PROJECT_CPM_DOWNLOAD_STATUS 0 PROJECT_CPM_DOWNLOAD_STATUS_CODE)
+  list(GET PROJECT_CPM_DOWNLOAD_STATUS 1 PROJECT_CPM_DOWNLOAD_STATUS_MESSAGE)
+
+  if(NOT PROJECT_CPM_DOWNLOAD_STATUS_CODE EQUAL 0)
+    file(REMOVE "${PROJECT_CPM_DOWNLOAD_LOCATION}")
+    message(
+      FATAL_ERROR
+      "Failed to download CPM.cmake from ${PROJECT_CPM_URL}: ${PROJECT_CPM_DOWNLOAD_STATUS_MESSAGE}"
+    )
+  endif()
+endif()
+
+include("${PROJECT_CPM_DOWNLOAD_LOCATION}")
