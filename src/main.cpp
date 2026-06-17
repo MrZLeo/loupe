@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <argum/argum.h>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <ftxui/component/app.hpp>
@@ -11,6 +12,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -43,6 +45,30 @@ struct AppState {
   std::size_t search_origin_selected{0};
 };
 
+struct BrowserEntry {
+  std::filesystem::path path;
+  std::string display_path;
+  std::string modified_label;
+};
+
+struct BrowserState {
+  std::filesystem::path root;
+  std::vector<BrowserEntry> entries;
+  std::vector<std::size_t> visible_entries;
+  std::size_t selected{0};
+  std::string status;
+  bool search_active{false};
+  std::string search_input;
+  std::string search_query;
+};
+
+struct ApplicationState {
+  BrowserState browser;
+  AppState viewer;
+  bool browser_available{false};
+  bool showing_browser{false};
+};
+
 enum class HighlightKind {
   None,
   Match,
@@ -70,7 +96,9 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                  }));
 
   parser.add(Argum::Positional("path")
-                 .help("agent log file (.json or .jsonl)")
+                 .occurs(Argum::zeroOrOneTime)
+                 .help("agent log file or directory; defaults to current "
+                       "directory")
                  .handler([&](const std::string_view &value) {
                    result.options.path =
                        std::filesystem::path{std::string{value}};
@@ -127,6 +155,257 @@ std::string clipped_label(std::string_view text) {
     return std::string{text};
   }
   return std::string{text.substr(0, kMaxLabelLength - 3)} + "...";
+}
+
+std::string lowercase_copy(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+  for (const char value : text) {
+    out.push_back(
+        static_cast<char>(std::tolower(static_cast<unsigned char>(value))));
+  }
+  return out;
+}
+
+bool
+contains_case_insensitive(std::string_view haystack, std::string_view needle) {
+  if (needle.empty()) {
+    return true;
+  }
+
+  const std::string lower_haystack = lowercase_copy(haystack);
+  const std::string lower_needle = lowercase_copy(needle);
+  return lower_haystack.find(lower_needle) != std::string::npos;
+}
+
+bool is_log_candidate(const std::filesystem::path &path) {
+  const std::string extension = lowercase_copy(path.extension().string());
+  return extension == ".json"
+      || extension == ".jsonl"
+      || extension == ".ndjson"
+      || extension == ".log";
+}
+
+bool is_ignored_browser_directory(const std::filesystem::path &path) {
+  const std::string name = path.filename().string();
+  if (name == ".git"
+      || name == ".cpm-cache"
+      || name == "build"
+      || name == "CMakeFiles"
+      || name == "_deps"
+      || name == "node_modules"
+      || name == "dist"
+      || name == "out"
+      || name == "target"
+      || name == ".venv"
+      || name == "venv") {
+    return true;
+  }
+  return name.rfind("cmake-build-", 0) == 0;
+}
+
+std::string pluralize(std::size_t count, std::string_view singular,
+                      std::string_view plural) {
+  return std::to_string(count)
+       + " "
+       + std::string{count == 1 ? singular : plural};
+}
+
+std::string age_label(std::filesystem::file_time_type modified_time) {
+  using namespace std::chrono;
+
+  const auto now = std::filesystem::file_time_type::clock::now();
+  if (modified_time >= now) {
+    return "just now";
+  }
+
+  const auto age = now - modified_time;
+  const auto minutes = duration_cast<std::chrono::minutes>(age).count();
+  if (minutes < 1) {
+    return "just now";
+  }
+  if (minutes < 60) {
+    return pluralize(static_cast<std::size_t>(minutes), "minute ago",
+                     "minutes ago");
+  }
+
+  const auto hours = duration_cast<std::chrono::hours>(age).count();
+  if (hours < 24) {
+    return pluralize(static_cast<std::size_t>(hours), "hour ago", "hours ago");
+  }
+
+  const auto days = duration_cast<std::chrono::hours>(age).count() / 24;
+  if (days < 30) {
+    return pluralize(static_cast<std::size_t>(days), "day ago", "days ago");
+  }
+  if (days < 365) {
+    return pluralize(static_cast<std::size_t>(days / 30), "month ago",
+                     "months ago");
+  }
+  return pluralize(static_cast<std::size_t>(days / 365), "year ago",
+                   "years ago");
+}
+
+std::string relative_display_path(const std::filesystem::path &path,
+                                  const std::filesystem::path &root) {
+  std::error_code error;
+  const auto relative = std::filesystem::relative(path, root, error);
+  if (!error && !relative.empty()) {
+    return relative.generic_string();
+  }
+  return path.generic_string();
+}
+
+std::string browser_query(const BrowserState &state) {
+  return state.search_active ? state.search_input : state.search_query;
+}
+
+void apply_browser_filter(BrowserState &state) {
+  state.visible_entries.clear();
+  const std::string query = browser_query(state);
+
+  for (std::size_t index = 0; index < state.entries.size(); ++index) {
+    if (contains_case_insensitive(state.entries[index].display_path, query)) {
+      state.visible_entries.push_back(index);
+    }
+  }
+
+  if (state.visible_entries.empty()) {
+    state.selected = 0;
+    return;
+  }
+  state.selected = std::min(state.selected, state.visible_entries.size() - 1);
+}
+
+void refresh_browser(BrowserState &state) {
+  state.entries.clear();
+  std::error_code error;
+
+  if (!std::filesystem::exists(state.root, error) || error) {
+    state.status = "directory does not exist: " + state.root.string();
+    apply_browser_filter(state);
+    return;
+  }
+  if (!std::filesystem::is_directory(state.root, error) || error) {
+    state.status = "not a directory: " + state.root.string();
+    apply_browser_filter(state);
+    return;
+  }
+
+  const auto options =
+      std::filesystem::directory_options::skip_permission_denied;
+  std::filesystem::recursive_directory_iterator iterator{state.root, options,
+                                                         error};
+  if (error) {
+    state.status = "could not read directory: " + error.message();
+    apply_browser_filter(state);
+    return;
+  }
+
+  const std::filesystem::recursive_directory_iterator end;
+  bool skipped_entries = false;
+
+  while (!error && iterator != end) {
+    const auto entry = *iterator;
+    std::error_code entry_error;
+    if (entry.is_directory(entry_error)) {
+      if (is_ignored_browser_directory(entry.path())) {
+        iterator.disable_recursion_pending();
+      }
+    } else if (!entry_error
+               && entry.is_regular_file(entry_error)
+               && !entry_error
+               && is_log_candidate(entry.path())) {
+      std::string modified = "unknown";
+      std::error_code time_error;
+      const auto write_time =
+          std::filesystem::last_write_time(entry.path(), time_error);
+      if (!time_error) {
+        modified = age_label(write_time);
+      }
+      state.entries.push_back(BrowserEntry{
+          .path = entry.path(),
+          .display_path = relative_display_path(entry.path(), state.root),
+          .modified_label = modified,
+      });
+    }
+
+    iterator.increment(error);
+    if (error) {
+      skipped_entries = true;
+      error.clear();
+    }
+  }
+
+  std::sort(state.entries.begin(), state.entries.end(),
+            [](const BrowserEntry &left, const BrowserEntry &right) {
+              return lowercase_copy(left.display_path)
+                   < lowercase_copy(right.display_path);
+            });
+
+  apply_browser_filter(state);
+  state.status = skipped_entries ? "some entries were skipped" : "";
+}
+
+void begin_browser_search(BrowserState &state) {
+  state.search_active = true;
+  state.search_input.clear();
+  state.status.clear();
+  apply_browser_filter(state);
+}
+
+void cancel_browser_search(BrowserState &state) {
+  state.search_active = false;
+  state.search_input.clear();
+  state.status = "search canceled";
+  apply_browser_filter(state);
+}
+
+void commit_browser_search(BrowserState &state) {
+  state.search_active = false;
+  state.search_query = state.search_input;
+  apply_browser_filter(state);
+  if (state.search_query.empty()) {
+    state.status = "empty search";
+    return;
+  }
+  state.status = state.visible_entries.empty() ? "no matches" : "";
+}
+
+void update_browser_search_preview(BrowserState &state) {
+  state.status.clear();
+  apply_browser_filter(state);
+}
+
+void move_browser_up(BrowserState &state, std::size_t amount) {
+  if (amount > state.selected) {
+    state.selected = 0;
+    return;
+  }
+  state.selected -= amount;
+}
+
+void move_browser_down(BrowserState &state, std::size_t amount) {
+  if (state.visible_entries.empty()) {
+    state.selected = 0;
+    return;
+  }
+  const std::size_t last = state.visible_entries.size() - 1;
+  state.selected = std::min(last, state.selected + amount);
+}
+
+const BrowserEntry *selected_browser_entry(const BrowserState &state) {
+  if (state.visible_entries.empty()) {
+    return nullptr;
+  }
+  return &state.entries[state.visible_entries[state.selected]];
+}
+
+AppState load_viewer_state(const std::filesystem::path &path) {
+  return AppState{
+      .path = path,
+      .parsed = agentlens::parse_log_file(path),
+  };
 }
 
 bool is_space(char value) {
@@ -602,7 +881,119 @@ ftxui::Element render_errors(const std::vector<std::string> &errors) {
   return vbox(std::move(lines)) | flex;
 }
 
-ftxui::Element render(AppState &state) {
+ftxui::Element render_browser_entry(const BrowserEntry &entry, bool selected) {
+  using namespace ftxui;
+
+  const Color path_color = selected ? Color::MagentaLight : Color::GrayLight;
+  Element block = vbox({
+      text(entry.display_path) | color(path_color),
+      text(entry.modified_label) | color(Color::GrayDark),
+  });
+
+  if (selected) {
+    return hbox({
+               text("|") | color(Color::MagentaLight),
+               text(" "),
+               block,
+           })
+         | focus;
+  }
+
+  return hbox({
+      text("  "),
+      block,
+  });
+}
+
+ftxui::Element render_browser_empty(const BrowserState &state) {
+  using namespace ftxui;
+
+  Elements lines;
+  if (state.entries.empty()) {
+    lines.push_back(text("No log files found") | bold | color(Color::RedLight));
+    lines.push_back(separatorEmpty());
+    lines.push_back(
+        paragraph("Looking for .json, .jsonl, .ndjson, and .log files under "
+                  + state.root.string())
+        | color(Color::YellowLight));
+  } else {
+    lines.push_back(text("No matches") | bold | color(Color::YellowLight));
+    lines.push_back(separatorEmpty());
+    lines.push_back(paragraph("No file path matches \""
+                              + clipped_label(browser_query(state))
+                              + "\"")
+                    | color(Color::GrayLight));
+  }
+  return vbox(std::move(lines)) | flex;
+}
+
+ftxui::Element render_browser(BrowserState &state) {
+  using namespace ftxui;
+
+  Elements rows;
+  if (state.visible_entries.empty()) {
+    rows.push_back(render_browser_empty(state));
+  } else {
+    for (std::size_t visible_index = 0;
+         visible_index < state.visible_entries.size(); ++visible_index) {
+      const BrowserEntry &entry =
+          state.entries[state.visible_entries[visible_index]];
+      rows.push_back(
+          render_browser_entry(entry, visible_index == state.selected));
+      rows.push_back(separatorEmpty());
+    }
+  }
+
+  const std::string count = pluralize(state.entries.size(), "file", "files");
+  const std::string cursor =
+      state.visible_entries.empty()
+          ? "0/0"
+          : std::to_string(state.selected + 1)
+                + "/"
+                + std::to_string(state.visible_entries.size());
+
+  Elements status_items{
+      text(" AgentLens ")
+          | bold
+          | color(Color::Black)
+          | bgcolor(Color::MagentaLight),
+      text("  " + count) | color(Color::GrayLight),
+      text("  " + cursor) | color(Color::GrayLight),
+      text("  " + state.root.string()) | color(Color::GrayLight),
+  };
+
+  const std::string query = browser_query(state);
+  if (!state.status.empty()) {
+    status_items.push_back(text("  " + state.status)
+                           | color(Color::YellowLight));
+  }
+  if (!query.empty()) {
+    status_items.push_back(text("  filter \"" + clipped_label(query) + "\"")
+                           | color(Color::CyanLight));
+  }
+
+  Element help = state.search_active
+                   ? hbox({
+                         text("/") | bold | color(Color::CyanLight),
+                         text(state.search_input) | color(Color::White),
+                         text("  enter filter  esc cancel  backspace edit")
+                             | color(Color::GrayDark),
+                     })
+                   : text("j/k arrows h/l page g/G top/bottom  / find  "
+                          "enter open  r refresh  q quit")
+                         | color(Color::GrayDark);
+
+  return vbox({
+             hbox(std::move(status_items)),
+             separatorEmpty(),
+             vbox(std::move(rows)) | yframe | vscroll_indicator | flex,
+             separatorEmpty(),
+             help,
+         })
+       | flex;
+}
+
+ftxui::Element render(AppState &state, bool can_return_to_browser) {
   using namespace ftxui;
 
   const std::string_view visible_search_query =
@@ -660,6 +1051,13 @@ ftxui::Element render(AppState &state) {
                            | color(Color::CyanLight));
   }
 
+  std::string help_text =
+      "j/k arrows page g/G scroll  / search  n/N next/prev  r reload";
+  if (can_return_to_browser) {
+    help_text += "  b files";
+  }
+  help_text += "  q quit";
+
   Element help = state.search_active
                    ? hbox({
                          text("/") | bold | color(Color::CyanLight),
@@ -667,9 +1065,7 @@ ftxui::Element render(AppState &state) {
                          text("  enter search  esc cancel  backspace edit")
                              | color(Color::GrayDark),
                      })
-                   : text("j/k arrows page g/G scroll  / search  n/N next/prev "
-                          " r reload  q quit")
-                         | color(Color::GrayDark);
+                   : text(help_text) | color(Color::GrayDark);
 
   return vbox({
              hbox(std::move(status_items)),
@@ -764,6 +1160,139 @@ handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
   }
   return false;
 }
+
+bool
+handle_browser_search_event(BrowserState &state, const ftxui::Event &event) {
+  if (event == ftxui::Event::Escape) {
+    cancel_browser_search(state);
+    return true;
+  }
+  if (event == ftxui::Event::Return) {
+    commit_browser_search(state);
+    return true;
+  }
+  if (event == ftxui::Event::Backspace) {
+    if (!state.search_input.empty()) {
+      state.search_input.pop_back();
+    }
+    update_browser_search_preview(state);
+    return true;
+  }
+  if (event == ftxui::Event::CtrlU) {
+    state.search_input.clear();
+    update_browser_search_preview(state);
+    return true;
+  }
+  if (event.is_character()) {
+    state.search_input += event.character();
+    update_browser_search_preview(state);
+    return true;
+  }
+  return true;
+}
+
+void open_selected_file(ApplicationState &state) {
+  const BrowserEntry *entry = selected_browser_entry(state.browser);
+  if (entry == nullptr) {
+    state.browser.status = "no file selected";
+    return;
+  }
+
+  state.viewer = load_viewer_state(entry->path);
+  state.showing_browser = false;
+}
+
+bool handle_browser_event(ApplicationState &state, ftxui::Event event,
+                          const ftxui::Closure &quit) {
+  BrowserState &browser = state.browser;
+  if (browser.search_active) {
+    return handle_browser_search_event(browser, event);
+  }
+  if (event == ftxui::Event::Character('/')) {
+    begin_browser_search(browser);
+    return true;
+  }
+  if (event == ftxui::Event::Return) {
+    open_selected_file(state);
+    return true;
+  }
+  if (event == ftxui::Event::q || event == ftxui::Event::Escape) {
+    quit();
+    return true;
+  }
+  if (event == ftxui::Event::j || event == ftxui::Event::ArrowDown) {
+    move_browser_down(browser, 1);
+    return true;
+  }
+  if (event == ftxui::Event::k || event == ftxui::Event::ArrowUp) {
+    move_browser_up(browser, 1);
+    return true;
+  }
+  if (event == ftxui::Event::l
+      || event == ftxui::Event::ArrowRight
+      || event == ftxui::Event::PageDown) {
+    move_browser_down(browser, 10);
+    return true;
+  }
+  if (event == ftxui::Event::h
+      || event == ftxui::Event::ArrowLeft
+      || event == ftxui::Event::PageUp) {
+    move_browser_up(browser, 10);
+    return true;
+  }
+  if (event == ftxui::Event::g) {
+    browser.selected = 0;
+    return true;
+  }
+  if (event == ftxui::Event::G) {
+    if (!browser.visible_entries.empty()) {
+      browser.selected = browser.visible_entries.size() - 1;
+    }
+    return true;
+  }
+  if (event == ftxui::Event::r) {
+    refresh_browser(browser);
+    return true;
+  }
+  return false;
+}
+
+ftxui::Element render_app(ApplicationState &state) {
+  if (state.showing_browser) {
+    return render_browser(state.browser);
+  }
+  return render(state.viewer, state.browser_available);
+}
+
+bool handle_app_event(ApplicationState &state, ftxui::Event event,
+                      const ftxui::Closure &quit) {
+  if (state.showing_browser) {
+    return handle_browser_event(state, std::move(event), quit);
+  }
+  if (state.browser_available
+      && !state.viewer.search_active
+      && event == ftxui::Event::b) {
+    state.browser.status = "returned from " + short_path(state.viewer.path);
+    state.showing_browser = true;
+    return true;
+  }
+  return handle_event(state.viewer, std::move(event), quit);
+}
+
+std::filesystem::path current_directory_path() {
+  std::error_code error;
+  const auto current = std::filesystem::current_path(error);
+  if (!error) {
+    return current;
+  }
+  return ".";
+}
+
+bool is_directory_path(const std::filesystem::path &path) {
+  std::error_code error;
+  const bool directory = std::filesystem::is_directory(path, error);
+  return !error && directory;
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -772,17 +1301,26 @@ int main(int argc, char **argv) {
     return cli.exit_code;
   }
 
-  AppState state{
-      .path = cli.options.path,
-      .parsed = agentlens::parse_log_file(cli.options.path),
-  };
+  const bool path_was_omitted = cli.options.path.empty();
+  const std::filesystem::path start_path =
+      path_was_omitted ? current_directory_path() : cli.options.path;
+
+  ApplicationState state;
+  if (path_was_omitted || is_directory_path(start_path)) {
+    state.browser.root = start_path;
+    state.browser_available = true;
+    state.showing_browser = true;
+    refresh_browser(state.browser);
+  } else {
+    state.viewer = load_viewer_state(start_path);
+  }
 
   auto screen = ftxui::App::Fullscreen();
   const ftxui::Closure quit = screen.ExitLoopClosure();
 
-  auto component = ftxui::Renderer([&] { return render(state); });
+  auto component = ftxui::Renderer([&] { return render_app(state); });
   component |= ftxui::CatchEvent([&](ftxui::Event event) {
-    return handle_event(state, std::move(event), quit);
+    return handle_app_event(state, std::move(event), quit);
   });
 
   screen.Loop(component);
