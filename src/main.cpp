@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <ftxui/component/app.hpp>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "project/log_parser.hpp"
+#include "project/markdown_text.hpp"
 #include "project/structured_text.hpp"
 
 namespace {
@@ -53,6 +55,181 @@ std::string clipped_content(const std::string &content) {
     return content;
   }
   return content.substr(0, kMaxContentLength) + "\n[content clipped]";
+}
+
+bool is_space(char value) {
+  return std::isspace(static_cast<unsigned char>(value)) != 0;
+}
+
+bool is_plain_text_span(const agentlens::MarkdownSpan &span) {
+  return !span.bold && !span.italic && !span.code && span.link_url.empty();
+}
+
+bool is_plain_text(const std::vector<agentlens::MarkdownSpan> &spans) {
+  return spans.size() == 1 && is_plain_text_span(spans.front());
+}
+
+ftxui::Element styled_text(std::string_view value,
+                           const agentlens::MarkdownSpan &span,
+                           ftxui::Color base_color) {
+  using namespace ftxui;
+
+  Element element = text(value);
+
+  if (span.code) {
+    element = element | color(Color::Black) | bgcolor(Color::CyanLight);
+  } else if (!span.link_url.empty()) {
+    element = element | color(Color::CyanLight) | underlined;
+  } else {
+    element = element | color(base_color);
+  }
+
+  if (span.bold) {
+    element = element | bold;
+  }
+  if (span.italic) {
+    element = element | italic;
+  }
+
+  return element;
+}
+
+void append_tokenized_text(ftxui::Elements &out, std::string_view value,
+                           const agentlens::MarkdownSpan &span,
+                           ftxui::Color base_color) {
+  if (value.empty()) {
+    return;
+  }
+
+  if (span.code) {
+    out.push_back(styled_text(value, span, base_color));
+    return;
+  }
+
+  std::size_t index = 0;
+  while (index < value.size()) {
+    const std::size_t start = index;
+    if (is_space(value[index])) {
+      while (index < value.size() && is_space(value[index])) {
+        ++index;
+      }
+    } else {
+      while (index < value.size() && !is_space(value[index])) {
+        ++index;
+      }
+      while (index < value.size() && is_space(value[index])) {
+        ++index;
+      }
+    }
+
+    out.push_back(styled_text(value.substr(start, index - start), span,
+                              base_color));
+  }
+}
+
+ftxui::Element render_inline_spans(
+    const std::vector<agentlens::MarkdownSpan> &spans,
+    ftxui::Color base_color) {
+  using namespace ftxui;
+
+  if (spans.empty()) {
+    return text("");
+  }
+
+  if (is_plain_text(spans)) {
+    return paragraph(spans.front().text) | color(base_color);
+  }
+
+  Elements tokens;
+  for (const auto &span : spans) {
+    append_tokenized_text(tokens, span.text, span, base_color);
+  }
+
+  if (tokens.empty()) {
+    return text("");
+  }
+  return hflow(std::move(tokens)) | xflex;
+}
+
+ftxui::Element render_code_block(std::string_view code) {
+  using namespace ftxui;
+
+  Elements rows;
+  std::size_t start = 0;
+  while (start <= code.size()) {
+    const std::size_t end = code.find('\n', start);
+    const std::string_view line = end == std::string_view::npos
+                                      ? code.substr(start)
+                                      : code.substr(start, end - start);
+    rows.push_back(hbox({
+        text("  ") | color(Color::CyanLight),
+        paragraph(std::string{line}) | color(Color::CyanLight),
+    }));
+    if (end == std::string_view::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+
+  if (rows.empty()) {
+    rows.push_back(text("  ") | color(Color::CyanLight));
+  }
+
+  return vbox(std::move(rows));
+}
+
+ftxui::Element render_markdown_block(const agentlens::MarkdownBlock &block) {
+  using namespace ftxui;
+
+  switch (block.kind) {
+  case agentlens::MarkdownBlockKind::Blank:
+    return text("");
+
+  case agentlens::MarkdownBlockKind::CodeBlock:
+    return render_code_block(block.code);
+
+  case agentlens::MarkdownBlockKind::Heading: {
+    const Color heading_color =
+        block.level <= 2 ? Color::White : Color::GrayLight;
+    return render_inline_spans(block.spans, heading_color) | bold;
+  }
+
+  case agentlens::MarkdownBlockKind::ListItem: {
+    const int indent = std::min(block.level, 6) * 2;
+    std::string marker(static_cast<std::size_t>(indent), ' ');
+    marker += block.marker.empty() ? "-" : block.marker;
+    marker += " ";
+    return hbox({
+        text(marker) | color(Color::GrayDark),
+        render_inline_spans(block.spans, Color::GrayLight) | xflex,
+    });
+  }
+
+  case agentlens::MarkdownBlockKind::Quote:
+    return hbox({
+        text("> ") | color(Color::GrayDark),
+        render_inline_spans(block.spans, Color::GrayLight) | dim | xflex,
+    });
+
+  case agentlens::MarkdownBlockKind::Paragraph:
+    return render_inline_spans(block.spans, Color::GrayLight);
+  }
+
+  return text("");
+}
+
+ftxui::Element render_markdown_text(std::string_view content) {
+  using namespace ftxui;
+
+  Elements rows;
+  for (const auto &block : agentlens::parse_markdown_text(content)) {
+    rows.push_back(render_markdown_block(block));
+  }
+
+  if (rows.empty()) {
+    return text("");
+  }
+  return vbox(std::move(rows)) | xflex;
 }
 
 void clamp_selection(AppState &state) {
@@ -109,9 +286,8 @@ ftxui::Element render_message(const agentlens::LogMessage &message,
 
   Element body = message.content.empty()
                      ? text("(empty)") | dim
-                     : paragraph(clipped_content(agentlens::format_structured_text(
-                           message.content)))
-                           | color(Color::GrayLight);
+                     : render_markdown_text(clipped_content(
+                           agentlens::format_structured_text(message.content)));
 
   Elements body_rows{body};
   for (const auto &annotation : message.annotations) {
