@@ -114,6 +114,9 @@ set_target_properties(
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
 )
+if(${PROJECT_NAME}_BUILD_EXECUTABLE)
+  set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME agentlens)
+endif()
 if(${PROJECT_NAME}_BUILD_EXECUTABLE AND ${PROJECT_NAME}_ENABLE_UNIT_TESTING)
   set_target_properties(
     ${PROJECT_NAME}_LIB
@@ -153,26 +156,71 @@ include(cmake/Doxygen.cmake)
 # Model project dependencies
 #
 
-# Identify and link with the specific "packages" the project uses
-#CPMAddPackage(
-#  NAME dependency1
-#  GITHUB_REPOSITORY owner/dependency1
-#  VERSION 1.2.3
-#  OPTIONS
-#    "DEPENDENCY1_BUILD_TESTS OFF"
-#)
-#target_link_libraries(
-#  ${PROJECT_NAME}
-#  PUBLIC
-#    dependency1::dependency1
-#)
-#if(${PROJECT_NAME}_BUILD_EXECUTABLE AND ${PROJECT_NAME}_ENABLE_UNIT_TESTING)
-#  target_link_libraries(
-#    ${PROJECT_NAME}_LIB
-#    PUBLIC
-#      dependency1::dependency1
-#  )
-#endif()
+set(PROJECT_INSTALL_SIMDJSON OFF)
+if(NOT ${PROJECT_NAME}_BUILD_EXECUTABLE
+   AND NOT ${PROJECT_NAME}_BUILD_HEADERS_ONLY)
+  set(PROJECT_INSTALL_SIMDJSON ON)
+endif()
+
+CPMAddPackage(
+  NAME simdjson
+  GITHUB_REPOSITORY simdjson/simdjson
+  VERSION 4.6.4
+  OPTIONS
+    "SIMDJSON_INSTALL ${PROJECT_INSTALL_SIMDJSON}"
+    "SIMDJSON_BUILD_EXAMPLES OFF"
+    "SIMDJSON_BUILD_TESTS OFF"
+    "SIMDJSON_BUILD_BENCHMARKS OFF"
+)
+
+CPMAddPackage(
+  NAME FTXUI
+  GITHUB_REPOSITORY ArthurSonzogni/FTXUI
+  VERSION 7.0.0
+  OPTIONS
+    "FTXUI_BUILD_DOCS OFF"
+    "FTXUI_BUILD_EXAMPLES OFF"
+    "FTXUI_BUILD_TESTS OFF"
+    "FTXUI_ENABLE_INSTALL OFF"
+)
+
+function(project_mark_dependency_includes_system target)
+  if(NOT TARGET ${target})
+    return()
+  endif()
+
+  get_target_property(dependency_includes ${target} INTERFACE_INCLUDE_DIRECTORIES)
+  if(dependency_includes)
+    set_target_properties(
+      ${target}
+      PROPERTIES
+      INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${dependency_includes}"
+    )
+  endif()
+endfunction()
+
+foreach(dependency_target IN ITEMS simdjson screen dom component)
+  project_mark_dependency_includes_system(${dependency_target})
+endforeach()
+
+set(PROJECT_LIBRARY_DEPENDENCIES simdjson::simdjson)
+set(PROJECT_EXECUTABLE_DEPENDENCIES simdjson::simdjson ftxui::component)
+
+function(project_link_dependencies target)
+  get_target_property(target_type ${target} TYPE)
+  if(target_type STREQUAL "INTERFACE_LIBRARY")
+    return()
+  elseif(target_type STREQUAL "EXECUTABLE")
+    target_link_libraries(${target} PRIVATE ${PROJECT_EXECUTABLE_DEPENDENCIES})
+  else()
+    target_link_libraries(${target} PRIVATE ${PROJECT_LIBRARY_DEPENDENCIES})
+  endif()
+endfunction()
+
+project_link_dependencies(${PROJECT_NAME})
+if(${PROJECT_NAME}_BUILD_EXECUTABLE AND ${PROJECT_NAME}_ENABLE_UNIT_TESTING)
+  project_link_dependencies(${PROJECT_NAME}_LIB)
+endif()
 
 # For Windows, it is necessary to link with the MultiThreaded library.
 # Depending on how the rest of the project's dependencies are linked, it might be necessary
@@ -316,6 +364,14 @@ write_basic_package_version_file(
   COMPATIBILITY
   SameMajorVersion
 )
+
+set(PROJECT_CONFIG_DEPENDENCIES "")
+if(PROJECT_INSTALL_SIMDJSON)
+  set(
+    PROJECT_CONFIG_DEPENDENCIES
+    "include(CMakeFindDependencyMacro)\nfind_dependency(simdjson CONFIG PATHS \"\${PACKAGE_PREFIX_DIR}\")"
+  )
+endif()
 
 configure_package_config_file(
   ${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in
