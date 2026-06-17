@@ -184,6 +184,14 @@ CPMAddPackage(
     "FTXUI_ENABLE_INSTALL OFF"
 )
 
+CPMAddPackage(
+  NAME argum
+  GITHUB_REPOSITORY gershnik/argum
+  GIT_TAG v2.10
+  OPTIONS
+    "ARGUM_NO_TESTS ON"
+)
+
 function(project_mark_dependency_includes_system target)
   if(NOT TARGET ${target})
     return()
@@ -199,12 +207,12 @@ function(project_mark_dependency_includes_system target)
   endif()
 endfunction()
 
-foreach(dependency_target IN ITEMS simdjson screen dom component)
+foreach(dependency_target IN ITEMS simdjson screen dom component argum)
   project_mark_dependency_includes_system(${dependency_target})
 endforeach()
 
 set(PROJECT_LIBRARY_DEPENDENCIES simdjson::simdjson)
-set(PROJECT_EXECUTABLE_DEPENDENCIES simdjson::simdjson ftxui::component)
+set(PROJECT_EXECUTABLE_DEPENDENCIES simdjson::simdjson ftxui::component argum::argum)
 
 function(project_link_dependencies target)
   get_target_property(target_type ${target} TYPE)
@@ -247,6 +255,7 @@ if(${PROJECT_NAME}_BUILD_HEADERS_ONLY)
     INTERFACE
     $<INSTALL_INTERFACE:include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
   )
 else()
   target_include_directories(
@@ -254,6 +263,7 @@ else()
     PUBLIC
     $<INSTALL_INTERFACE:include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
   )
@@ -263,6 +273,7 @@ else()
       PUBLIC
       $<INSTALL_INTERFACE:include>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
       PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
     )

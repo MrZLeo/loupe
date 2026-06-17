@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <argum/argum.h>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -17,8 +18,19 @@
 #include "project/markdown_text.hpp"
 #include "project/search.hpp"
 #include "project/structured_text.hpp"
+#include "project/version.hpp"
 
 namespace {
+struct CliOptions {
+  std::filesystem::path path;
+};
+
+struct CliParseResult {
+  CliOptions options;
+  bool run{false};
+  int exit_code{EXIT_SUCCESS};
+};
+
 struct AppState {
   std::filesystem::path path;
   agentlens::ParseResult parsed;
@@ -36,6 +48,46 @@ enum class HighlightKind {
   Match,
   Current,
 };
+
+CliParseResult parse_cli_args(int argc, char **argv) {
+  const char *program_name =
+      argc > 0 && argv[0] != nullptr ? argv[0] : "agentlens";
+
+  CliParseResult result;
+  Argum::Parser parser;
+
+  parser.add(Argum::Option("--help", "-h")
+                 .help("show this help message and exit")
+                 .handler([&]() {
+                   std::cout << parser.formatHelp(program_name);
+                   std::exit(EXIT_SUCCESS);
+                 }));
+  parser.add(Argum::Option("--version")
+                 .help("show program's version number and exit")
+                 .handler([]() {
+                   std::cout << "agentlens " << PROJECT_VERSION << '\n';
+                   std::exit(EXIT_SUCCESS);
+                 }));
+
+  parser.add(Argum::Positional("path")
+                 .help("agent log file (.json or .jsonl)")
+                 .handler([&](const std::string_view &value) {
+                   result.options.path =
+                       std::filesystem::path{std::string{value}};
+                 }));
+
+  try {
+    parser.parse(argc, argv);
+  } catch (const Argum::ParsingException &ex) {
+    std::cerr << ex.message() << '\n';
+    std::cerr << parser.formatUsage(program_name) << '\n';
+    result.exit_code = EXIT_FAILURE;
+    return result;
+  }
+
+  result.run = true;
+  return result;
+}
 
 ftxui::Color role_color(std::string_view role) {
   if (role == "user") {
@@ -715,16 +767,14 @@ handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
 } // namespace
 
 int main(int argc, char **argv) {
-  if (argc != 2
-      || std::string_view{argv[1]} == "-h"
-      || std::string_view{argv[1]} == "--help") {
-    std::cerr << "usage: agentlens <agent-log.json|agent-log.jsonl>\n";
-    return argc == 2 ? EXIT_SUCCESS : EXIT_FAILURE;
+  const CliParseResult cli = parse_cli_args(argc, argv);
+  if (!cli.run) {
+    return cli.exit_code;
   }
 
   AppState state{
-      .path = std::filesystem::path{argv[1]},
-      .parsed = agentlens::parse_log_file(std::filesystem::path{argv[1]}),
+      .path = cli.options.path,
+      .parsed = agentlens::parse_log_file(cli.options.path),
   };
 
   auto screen = ftxui::App::Fullscreen();
