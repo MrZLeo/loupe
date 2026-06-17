@@ -84,7 +84,7 @@ void append_newline(std::string &out, int indent) {
   append_indent(out, indent);
 }
 
-std::string normalize_text_newlines(std::string_view text) {
+std::string normalize_physical_newlines(std::string_view text) {
   std::string out;
   out.reserve(text.size());
 
@@ -92,11 +92,6 @@ std::string normalize_text_newlines(std::string_view text) {
     const char value = text[index];
     if (value == '\\' && index + 1 < text.size()) {
       const char next = text[index + 1];
-      if (next == 'n') {
-        out += '\n';
-        ++index;
-        continue;
-      }
       if (next == '\n') {
         out += '\n';
         ++index;
@@ -122,13 +117,30 @@ std::string normalize_text_newlines(std::string_view text) {
 
   return out;
 }
+
+std::string normalize_text_newlines(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const char value = text[index];
+    if (value == '\\' && index + 1 < text.size() && text[index + 1] == 'n') {
+      out += '\n';
+      ++index;
+      continue;
+    }
+    out += value;
+  }
+
+  return out;
+}
 } // namespace
 
 std::string format_structured_text(std::string_view text) {
-  const std::string normalized = normalize_text_newlines(text);
+  const std::string normalized = normalize_physical_newlines(text);
   const std::string trimmed = trim_copy(normalized);
   if (!likely_structured(trimmed)) {
-    return normalized;
+    return normalize_text_newlines(normalized);
   }
 
   std::string out;

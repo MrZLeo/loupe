@@ -625,6 +625,33 @@ render_searchable_text(std::string_view value, ftxui::Color base_color,
 }
 
 ftxui::Element
+render_searchable_lines(std::string_view value, ftxui::Color base_color,
+                        std::string_view search_query,
+                        bool current_search_match) {
+  using namespace ftxui;
+
+  Elements rows;
+  std::size_t start = 0;
+  while (start <= value.size()) {
+    const std::size_t end = value.find('\n', start);
+    const std::string_view line = end == std::string_view::npos
+                                    ? value.substr(start)
+                                    : value.substr(start, end - start);
+    rows.push_back(render_searchable_text(line, base_color, search_query,
+                                          current_search_match));
+    if (end == std::string_view::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+
+  if (rows.empty()) {
+    return text("");
+  }
+  return vbox(std::move(rows)) | xflex;
+}
+
+ftxui::Element
 render_code_block(std::string_view code, std::string_view search_query,
                   bool current_search_match) {
   using namespace ftxui;
@@ -944,9 +971,9 @@ render_message(const agentlens::LogMessage &message, bool selected,
 
   Elements body_rows{body};
   for (const auto &annotation : message.annotations) {
-    body_rows.push_back(render_searchable_text(annotation, Color::YellowLight,
-                                               search_query,
-                                               current_search_match)
+    body_rows.push_back(render_searchable_lines(annotation, Color::YellowLight,
+                                                search_query,
+                                                current_search_match)
                         | dim);
   }
 

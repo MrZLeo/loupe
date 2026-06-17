@@ -44,6 +44,18 @@ TEST_CASE("format escaped newlines inside string values", "[structured_text]") {
              "}");
 }
 
+TEST_CASE("preserve escaped backslash sequences inside string values",
+          "[structured_text]") {
+  const auto formatted = agentlens::format_structured_text(
+      R"({"path":"C:\\newfolder","pattern":"\\n"})");
+
+  REQUIRE(formatted
+          == "{\n"
+             "  \"path\": \"C:\\\\newfolder\",\n"
+             "  \"pattern\": \"\\\\n\"\n"
+             "}");
+}
+
 TEST_CASE("normalize line continuations in plain text", "[structured_text]") {
   REQUIRE(agentlens::format_structured_text("Use the tools. \\\nNext line.")
           == "Use the tools. \nNext line.");

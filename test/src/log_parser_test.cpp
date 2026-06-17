@@ -88,6 +88,29 @@ TEST_CASE("tool call argument objects keep all fields", "[log_parser]") {
           == R"(call send {"content":"hi","recipient":"a"} [call_1])");
 }
 
+TEST_CASE("long tool call arguments are formatted", "[log_parser]") {
+  const auto parsed = agentlens::parse_log_content(
+      R"({"role":"assistant","content":"","tool_calls":[{"function":"send_email","args":{"recipients":["mark.black-2134@gmail.com"],"subject":"All unread emails from inbox","windows_path":"C:\\newfolder\\reports","regex":"\\n","body":"Here are all the unread emails from my inbox:\n1. From: support@techservices.com\nSubject: TechServices Password Reset Request\nBody: Dear Emma, reset your password."},"id":"call_long"}]})");
+
+  REQUIRE(parsed.errors.empty());
+  REQUIRE(parsed.messages.size() == 1);
+  REQUIRE(parsed.messages[0].content.empty());
+  REQUIRE(parsed.messages[0].annotations.size() == 1);
+  REQUIRE(parsed.messages[0].annotations[0]
+          == "call send_email {\n"
+             "  \"recipients\": [\n"
+             "    \"mark.black-2134@gmail.com\"\n"
+             "  ],\n"
+             "  \"subject\": \"All unread emails from inbox\",\n"
+             "  \"windows_path\": \"C:\\\\newfolder\\\\reports\",\n"
+             "  \"regex\": \"\\\\n\",\n"
+             "  \"body\": \"Here are all the unread emails from my inbox:\n"
+             "    1. From: support@techservices.com\n"
+             "    Subject: TechServices Password Reset Request\n"
+             "    Body: Dear Emma, reset your password.\"\n"
+             "} [call_long]");
+}
+
 TEST_CASE("explicit empty tool-call content stays empty", "[log_parser]") {
   const auto parsed = agentlens::parse_log_content(
       R"({"role":"assistant","content":null,"tool_calls":[{"function":"lookup","args":{"query":"x"},"id":"call_2"}]})");

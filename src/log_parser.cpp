@@ -2,6 +2,8 @@
 
 #include <simdjson.h>
 
+#include "project/structured_text.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -55,6 +57,8 @@ constexpr std::array<std::string_view, 7> kContainerPointers{
     "/messages", "/conversation", "/events",           "/records",
     "/items",    "/data",         "/payload/messages",
 };
+
+constexpr std::size_t kMultilineToolArgumentThreshold = 100;
 
 std::string trim_copy(std::string_view text) {
   auto is_space = [](unsigned char value) { return std::isspace(value) != 0; };
@@ -343,6 +347,14 @@ std::string call_arguments(element value) {
   return first_argument_field_to_text(value, pointers, 0);
 }
 
+std::string display_call_arguments(std::string_view args) {
+  const std::string trimmed = trim_copy(args);
+  if (trimmed.size() <= kMultilineToolArgumentThreshold) {
+    return trimmed;
+  }
+  return format_structured_text(trimmed);
+}
+
 std::string call_id(element value) {
   static const std::vector<std::string_view> pointers{
       "/id",
@@ -369,7 +381,7 @@ std::string format_tool_call(element value, std::string_view prefix) {
 
   if (!args.empty() && args != "null") {
     formatted += " ";
-    formatted += args;
+    formatted += display_call_arguments(args);
   }
   if (!id.empty()) {
     formatted += " [";
