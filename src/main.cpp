@@ -79,12 +79,14 @@ enum class HighlightKind {
   Current,
 };
 
+using agentlens::advance_scroll_animation;
 using agentlens::clamp_scroll_target;
 using agentlens::content_viewport_height;
 using agentlens::content_viewport_width;
 using agentlens::kBrowserEntryRows;
 using agentlens::kMouseWheelCells;
 using agentlens::kMouseWheelHorizontalCells;
+using agentlens::scroll_animation_active;
 using agentlens::scroll_by;
 using agentlens::scroll_focus_position;
 using agentlens::use_selection_scroll;
@@ -1069,7 +1071,7 @@ render_scrollable_content(ftxui::Element content,
                   0, scroll_focus_position(scroll, viewport_height));
   }
 
-  return content | ftxui::yframe | ftxui::vscroll_indicator | ftxui::flex;
+  return content | ftxui::vscroll_indicator | ftxui::yframe | ftxui::flex;
 }
 
 ftxui::Element render_browser(BrowserState &state, int viewport_height) {
@@ -1431,6 +1433,22 @@ render_app(ApplicationState &state, int screen_height, int screen_width) {
                 viewport_width);
 }
 
+void advance_visible_scroll_animation(ApplicationState &state,
+                                      agentlens::ScrollClock::time_point now) {
+  if (state.showing_browser) {
+    advance_scroll_animation(state.browser.scroll, now);
+    return;
+  }
+  advance_scroll_animation(state.viewer.scroll, now);
+}
+
+bool visible_scroll_animation_active(const ApplicationState &state) {
+  if (state.showing_browser) {
+    return scroll_animation_active(state.browser.scroll);
+  }
+  return scroll_animation_active(state.viewer.scroll);
+}
+
 bool handle_app_event(ApplicationState &state, ftxui::Event event,
                       const ftxui::Closure &quit) {
   if (state.showing_browser) {
@@ -1485,8 +1503,14 @@ int main(int argc, char **argv) {
   auto screen = ftxui::App::Fullscreen();
   const ftxui::Closure quit = screen.ExitLoopClosure();
 
-  auto component = ftxui::Renderer(
-      [&] { return render_app(state, screen.dimy(), screen.dimx()); });
+  auto component = ftxui::Renderer([&] {
+    advance_visible_scroll_animation(state, agentlens::ScrollClock::now());
+    auto frame = render_app(state, screen.dimy(), screen.dimx());
+    if (visible_scroll_animation_active(state)) {
+      screen.RequestAnimationFrame();
+    }
+    return frame;
+  });
   component |= ftxui::CatchEvent([&](ftxui::Event event) {
     return handle_app_event(state, std::move(event), quit);
   });
