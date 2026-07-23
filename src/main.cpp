@@ -11,32 +11,40 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/color.hpp>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
 
+#include "loupe/log_format.hpp"
 #include "loupe/log_parser.hpp"
 #include "loupe/markdown_text.hpp"
+#include "loupe/message_projection.hpp"
 #include "loupe/scroll.hpp"
 #include "loupe/search.hpp"
+#include "loupe/session_parser.hpp"
 #include "loupe/structured_text.hpp"
 #include "loupe/version.hpp"
 
 namespace {
 struct CliOptions {
   std::filesystem::path path;
+  std::optional<loupe::LogFormat> format;
 };
 
 struct CliParseResult {
   CliOptions options;
+  std::string format_error;
   bool run{false};
   int exit_code{EXIT_SUCCESS};
 };
 
 struct AppState {
   std::filesystem::path path;
+  loupe::LogFormat format{loupe::LogFormat::Generic};
+  loupe::SessionParseResult session;
   loupe::ParseResult parsed;
   std::size_t selected{0};
   loupe::ScrollState scroll;
@@ -67,6 +75,7 @@ struct BrowserState {
 };
 
 struct ApplicationState {
+  loupe::LogFormat format{loupe::LogFormat::Generic};
   BrowserState browser;
   AppState viewer;
   bool browser_available{false};
@@ -120,6 +129,15 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                    std::cout << "loupe " << LOUPE_VERSION << '\n';
                    std::exit(EXIT_SUCCESS);
                  }));
+  parser.add(Argum::Option("--format", "-f")
+                 .help("log format: pi, codex, claudecode, or generic")
+                 .handler([&](const std::string_view &value) {
+                   result.options.format = loupe::parse_log_format(value);
+                   if (!result.options.format) {
+                     result.format_error =
+                         "unsupported log format: " + std::string{value};
+                   }
+                 }));
 
   parser.add(Argum::Positional("path")
                  .occurs(Argum::zeroOrOneTime)
@@ -134,6 +152,20 @@ CliParseResult parse_cli_args(int argc, char **argv) {
     parser.parse(argc, argv);
   } catch (const Argum::ParsingException &ex) {
     std::cerr << ex.message() << '\n';
+    std::cerr << parser.formatUsage(program_name) << '\n';
+    result.exit_code = EXIT_FAILURE;
+    return result;
+  }
+
+  if (!result.format_error.empty()) {
+    std::cerr << result.format_error << '\n';
+    std::cerr << parser.formatUsage(program_name) << '\n';
+    result.exit_code = EXIT_FAILURE;
+    return result;
+  }
+  if (!result.options.format) {
+    std::cerr << "error: --format is required "
+                 "(pi, codex, claudecode, or generic)\n";
     std::cerr << parser.formatUsage(program_name) << '\n';
     result.exit_code = EXIT_FAILURE;
     return result;
@@ -475,11 +507,22 @@ const BrowserEntry *selected_browser_entry(const BrowserState &state) {
   return &state.entries[state.visible_entries[state.selected]];
 }
 
-AppState load_viewer_state(const std::filesystem::path &path) {
-  return AppState{
-      .path = path,
-      .parsed = loupe::parse_log_file(path),
-  };
+AppState
+load_viewer_state(const std::filesystem::path &path, loupe::LogFormat format) {
+  auto session = loupe::parse_session_file(path, format);
+  loupe::ParseResult parsed;
+  if (!session.has_fatal_error()) {
+    parsed.messages = loupe::make_display_messages(session.session);
+  }
+  for (const auto &diagnostic : session.diagnostics) {
+    parsed.errors.push_back(loupe::format_diagnostic(diagnostic));
+  }
+  AppState loaded;
+  loaded.path = path;
+  loaded.format = format;
+  loaded.session = std::move(session);
+  loaded.parsed = std::move(parsed);
+  return loaded;
 }
 
 bool is_space(char value) {
@@ -620,8 +663,8 @@ render_searchable_text(std::string_view value, ftxui::Color base_color,
                        std::string_view search_query,
                        bool current_search_match) {
   return render_inline_spans(
-      {loupe::MarkdownSpan{.text = std::string{value}}}, base_color,
-      search_query, current_search_match);
+      {loupe::MarkdownSpan{.text = std::string{value}, .link_url = {}}},
+      base_color, search_query, current_search_match);
 }
 
 ftxui::Element
@@ -924,7 +967,9 @@ bool handle_mouse_scroll(AppState &state, ftxui::Event &event) {
 }
 
 void reload(AppState &state) {
-  state.parsed = loupe::parse_log_file(state.path);
+  AppState loaded = load_viewer_state(state.path, state.format);
+  state.session = std::move(loaded.session);
+  state.parsed = std::move(loaded.parsed);
   clamp_selection(state);
   if (!state.search_query.empty()) {
     jump_to_search_match(state, loupe::SearchDirection::Forward, true);
@@ -1213,9 +1258,19 @@ ftxui::Element render(AppState &state, bool can_return_to_browser,
           | bgcolor(Color::MagentaLight),
       text("  " + count) | color(Color::GrayLight),
       text("  " + cursor) | color(Color::GrayLight),
+      text("  " + std::string{loupe::log_format_name(state.format)})
+          | color(Color::GrayLight),
       text("  " + short_path(state.path)) | color(Color::GrayLight),
   };
 
+  if (!state.parsed.errors.empty()) {
+    status_items.push_back(
+        text("  " + std::to_string(state.parsed.errors.size()) + " diagnostics")
+        | color(Color::YellowLight));
+    status_items.push_back(
+        text("  " + clipped_label(state.parsed.errors.front()))
+        | color(Color::YellowLight));
+  }
   if (!state.status.empty()) {
     status_items.push_back(text("  " + state.status)
                            | color(Color::YellowLight));
@@ -1385,7 +1440,7 @@ void open_selected_file(ApplicationState &state) {
     return;
   }
 
-  state.viewer = load_viewer_state(entry->path);
+  state.viewer = load_viewer_state(entry->path, state.format);
   state.showing_browser = false;
 }
 
@@ -1518,13 +1573,14 @@ int main(int argc, char **argv) {
       path_was_omitted ? current_directory_path() : cli.options.path;
 
   ApplicationState state;
+  state.format = *cli.options.format;
   if (path_was_omitted || is_directory_path(start_path)) {
     state.browser.root = start_path;
     state.browser_available = true;
     state.showing_browser = true;
     refresh_browser(state.browser);
   } else {
-    state.viewer = load_viewer_state(start_path);
+    state.viewer = load_viewer_state(start_path, state.format);
   }
 
   auto screen = ftxui::App::Fullscreen();
