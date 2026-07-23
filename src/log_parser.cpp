@@ -476,8 +476,11 @@ append_element(element value, ParseResult &result, std::size_t source_line) {
 
   const std::string content = trim_copy(value_to_text(value, 0));
   if (!content.empty()) {
-    result.messages.push_back(
-        LogMessage{.content = content, .source_line = source_line});
+    result.messages.push_back(LogMessage{.content = content,
+                                         .annotations = {},
+                                         .timestamp = {},
+                                         .raw_type = {},
+                                         .source_line = source_line});
   }
 }
 
@@ -557,7 +560,10 @@ ParseResult parse_log_content(std::string_view content) {
 ParseResult parse_log_file(const std::filesystem::path &path) {
   std::ifstream input{path, std::ios::binary};
   if (!input) {
-    return ParseResult{.errors = {"failed to open " + path.string()}};
+    return ParseResult{
+        .messages = {},
+        .errors = {"failed to open " + path.string()},
+    };
   }
 
   std::ostringstream buffer;
