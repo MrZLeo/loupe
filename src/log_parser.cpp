@@ -1,8 +1,8 @@
-#include "project/log_parser.hpp"
+#include "loupe/log_parser.hpp"
 
 #include <simdjson.h>
 
-#include "project/structured_text.hpp"
+#include "loupe/structured_text.hpp"
 
 #include <algorithm>
 #include <array>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace agentlens {
+namespace loupe {
 namespace {
 using simdjson::dom::array;
 using simdjson::dom::element;
@@ -565,4 +565,4 @@ ParseResult parse_log_file(const std::filesystem::path &path) {
   ParseResult result = parse_log_content(buffer.str());
   return result;
 }
-} // namespace agentlens
+} // namespace loupe

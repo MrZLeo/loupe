@@ -12,12 +12,12 @@ set(exe_sources
 )
 
 set(headers
-  include/project/log_message.hpp
-  include/project/log_parser.hpp
-  include/project/markdown_text.hpp
-  include/project/scroll.hpp
-  include/project/search.hpp
-  include/project/structured_text.hpp
+  include/loupe/log_message.hpp
+  include/loupe/log_parser.hpp
+  include/loupe/markdown_text.hpp
+  include/loupe/scroll.hpp
+  include/loupe/search.hpp
+  include/loupe/structured_text.hpp
 )
 
 set(test_sources

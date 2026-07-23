@@ -6,9 +6,9 @@
 #include <string_view>
 #include <vector>
 
-#include "project/log_message.hpp"
+#include "loupe/log_message.hpp"
 
-namespace agentlens {
+namespace loupe {
 
 enum class SearchDirection {
   Forward,
@@ -38,6 +38,6 @@ find_next_match(const std::vector<std::size_t> &matches, std::size_t selected,
 std::optional<std::size_t>
 match_ordinal(const std::vector<std::size_t> &matches, std::size_t selected);
 
-} // namespace agentlens
+} // namespace loupe
 
 #endif // PROJECT_SEARCH_HPP_

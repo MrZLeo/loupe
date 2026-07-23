@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.25)
 #
 
 project(
-  "Project"
+  "Loupe"
   VERSION 0.1.0
   LANGUAGES CXX
 )
@@ -115,7 +115,7 @@ set_target_properties(
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
 )
 if(${PROJECT_NAME}_BUILD_EXECUTABLE)
-  set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME agentlens)
+  set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME loupe)
 endif()
 if(${PROJECT_NAME}_BUILD_EXECUTABLE AND ${PROJECT_NAME}_ENABLE_UNIT_TESTING)
   set_target_properties(

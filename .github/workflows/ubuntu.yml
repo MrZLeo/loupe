@@ -27,7 +27,7 @@ jobs:
         key: ${{ runner.os }}-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
 
     - name: configure
-      run: cmake -Bbuild -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION -DCPM_SOURCE_CACHE=$CPM_SOURCE_CACHE -DProject_ENABLE_CODE_COVERAGE=1
+      run: cmake -Bbuild -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION -DCPM_SOURCE_CACHE=$CPM_SOURCE_CACHE -DLoupe_ENABLE_CODE_COVERAGE=1
       
     - name: build
       run: cmake --build build --config $BUILD_TYPE -j4

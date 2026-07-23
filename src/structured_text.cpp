@@ -1,10 +1,10 @@
-#include "project/structured_text.hpp"
+#include "loupe/structured_text.hpp"
 
 #include <cctype>
 #include <string>
 #include <string_view>
 
-namespace agentlens {
+namespace loupe {
 namespace {
 std::string trim_copy(std::string_view text) {
   auto is_space = [](unsigned char value) { return std::isspace(value) != 0; };
@@ -231,4 +231,4 @@ std::string format_structured_text(std::string_view text) {
 
   return out;
 }
-} // namespace agentlens
+} // namespace loupe

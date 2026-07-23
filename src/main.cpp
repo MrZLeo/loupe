@@ -17,12 +17,12 @@
 #include <utility>
 #include <vector>
 
-#include "project/log_parser.hpp"
-#include "project/markdown_text.hpp"
-#include "project/scroll.hpp"
-#include "project/search.hpp"
-#include "project/structured_text.hpp"
-#include "project/version.hpp"
+#include "loupe/log_parser.hpp"
+#include "loupe/markdown_text.hpp"
+#include "loupe/scroll.hpp"
+#include "loupe/search.hpp"
+#include "loupe/structured_text.hpp"
+#include "loupe/version.hpp"
 
 namespace {
 struct CliOptions {
@@ -37,9 +37,9 @@ struct CliParseResult {
 
 struct AppState {
   std::filesystem::path path;
-  agentlens::ParseResult parsed;
+  loupe::ParseResult parsed;
   std::size_t selected{0};
-  agentlens::ScrollState scroll;
+  loupe::ScrollState scroll;
   std::string status;
   bool search_active{false};
   std::string search_input;
@@ -59,7 +59,7 @@ struct BrowserState {
   std::vector<BrowserEntry> entries;
   std::vector<std::size_t> visible_entries;
   std::size_t selected{0};
-  agentlens::ScrollState scroll;
+  loupe::ScrollState scroll;
   std::string status;
   bool search_active{false};
   std::string search_input;
@@ -79,31 +79,31 @@ enum class HighlightKind {
   Current,
 };
 
-using agentlens::advance_scroll_animation;
-using agentlens::clamp_scroll_target;
-using agentlens::content_viewport_height;
-using agentlens::content_viewport_width;
-using agentlens::kBrowserEntryRows;
-using agentlens::kMouseWheelCells;
-using agentlens::kMouseWheelHorizontalCells;
-using agentlens::scroll_animation_active;
-using agentlens::scroll_by;
-using agentlens::scroll_focus_position;
-using agentlens::use_selection_scroll;
+using loupe::advance_scroll_animation;
+using loupe::clamp_scroll_target;
+using loupe::content_viewport_height;
+using loupe::content_viewport_width;
+using loupe::kBrowserEntryRows;
+using loupe::kMouseWheelCells;
+using loupe::kMouseWheelHorizontalCells;
+using loupe::scroll_animation_active;
+using loupe::scroll_by;
+using loupe::scroll_focus_position;
+using loupe::use_selection_scroll;
 
 double browser_selected_offset(const BrowserState &state) {
-  return agentlens::indexed_scroll_offset(state.selected,
-                                          agentlens::kBrowserEntryRows);
+  return loupe::indexed_scroll_offset(state.selected,
+                                          loupe::kBrowserEntryRows);
 }
 
 double viewer_selected_offset(const AppState &state) {
-  return agentlens::indexed_scroll_offset(state.selected,
-                                          agentlens::kEstimatedMessageRows);
+  return loupe::indexed_scroll_offset(state.selected,
+                                          loupe::kEstimatedMessageRows);
 }
 
 CliParseResult parse_cli_args(int argc, char **argv) {
   const char *program_name =
-      argc > 0 && argv[0] != nullptr ? argv[0] : "agentlens";
+      argc > 0 && argv[0] != nullptr ? argv[0] : "loupe";
 
   CliParseResult result;
   Argum::Parser parser;
@@ -117,7 +117,7 @@ CliParseResult parse_cli_args(int argc, char **argv) {
   parser.add(Argum::Option("--version")
                  .help("show program's version number and exit")
                  .handler([]() {
-                   std::cout << "agentlens " << PROJECT_VERSION << '\n';
+                   std::cout << "loupe " << LOUPE_VERSION << '\n';
                    std::exit(EXIT_SUCCESS);
                  }));
 
@@ -478,7 +478,7 @@ const BrowserEntry *selected_browser_entry(const BrowserState &state) {
 AppState load_viewer_state(const std::filesystem::path &path) {
   return AppState{
       .path = path,
-      .parsed = agentlens::parse_log_file(path),
+      .parsed = loupe::parse_log_file(path),
   };
 }
 
@@ -486,16 +486,16 @@ bool is_space(char value) {
   return std::isspace(static_cast<unsigned char>(value)) != 0;
 }
 
-bool is_plain_text_span(const agentlens::MarkdownSpan &span) {
+bool is_plain_text_span(const loupe::MarkdownSpan &span) {
   return !span.bold && !span.italic && !span.code && span.link_url.empty();
 }
 
-bool is_plain_text(const std::vector<agentlens::MarkdownSpan> &spans) {
+bool is_plain_text(const std::vector<loupe::MarkdownSpan> &spans) {
   return spans.size() == 1 && is_plain_text_span(spans.front());
 }
 
 ftxui::Element
-styled_text(std::string_view value, const agentlens::MarkdownSpan &span,
+styled_text(std::string_view value, const loupe::MarkdownSpan &span,
             ftxui::Color base_color, HighlightKind highlight) {
   using namespace ftxui;
 
@@ -524,7 +524,7 @@ styled_text(std::string_view value, const agentlens::MarkdownSpan &span,
 }
 
 void append_tokenized_text(ftxui::Elements &out, std::string_view value,
-                           const agentlens::MarkdownSpan &span,
+                           const loupe::MarkdownSpan &span,
                            ftxui::Color base_color, HighlightKind highlight) {
   if (value.empty()) {
     return;
@@ -557,14 +557,14 @@ void append_tokenized_text(ftxui::Elements &out, std::string_view value,
 }
 
 void
-append_styled_tokens(ftxui::Elements &out, const agentlens::MarkdownSpan &span,
+append_styled_tokens(ftxui::Elements &out, const loupe::MarkdownSpan &span,
                      ftxui::Color base_color, std::string_view search_query,
                      bool current_search_match) {
   if (span.text.empty()) {
     return;
   }
 
-  const auto ranges = agentlens::find_text_matches(span.text, search_query);
+  const auto ranges = loupe::find_text_matches(span.text, search_query);
   if (ranges.empty()) {
     append_tokenized_text(out, span.text, span, base_color,
                           HighlightKind::None);
@@ -590,7 +590,7 @@ append_styled_tokens(ftxui::Elements &out, const agentlens::MarkdownSpan &span,
 }
 
 ftxui::Element
-render_inline_spans(const std::vector<agentlens::MarkdownSpan> &spans,
+render_inline_spans(const std::vector<loupe::MarkdownSpan> &spans,
                     ftxui::Color base_color, std::string_view search_query,
                     bool current_search_match) {
   using namespace ftxui;
@@ -620,7 +620,7 @@ render_searchable_text(std::string_view value, ftxui::Color base_color,
                        std::string_view search_query,
                        bool current_search_match) {
   return render_inline_spans(
-      {agentlens::MarkdownSpan{.text = std::string{value}}}, base_color,
+      {loupe::MarkdownSpan{.text = std::string{value}}}, base_color,
       search_query, current_search_match);
 }
 
@@ -681,19 +681,19 @@ render_code_block(std::string_view code, std::string_view search_query,
   return vbox(std::move(rows));
 }
 
-ftxui::Element render_markdown_block(const agentlens::MarkdownBlock &block,
+ftxui::Element render_markdown_block(const loupe::MarkdownBlock &block,
                                      std::string_view search_query,
                                      bool current_search_match) {
   using namespace ftxui;
 
   switch (block.kind) {
-  case agentlens::MarkdownBlockKind::Blank:
+  case loupe::MarkdownBlockKind::Blank:
     return text("");
 
-  case agentlens::MarkdownBlockKind::CodeBlock:
+  case loupe::MarkdownBlockKind::CodeBlock:
     return render_code_block(block.code, search_query, current_search_match);
 
-  case agentlens::MarkdownBlockKind::Heading: {
+  case loupe::MarkdownBlockKind::Heading: {
     const Color heading_color =
         block.level <= 2 ? Color::White : Color::GrayLight;
     return render_inline_spans(block.spans, heading_color, search_query,
@@ -701,7 +701,7 @@ ftxui::Element render_markdown_block(const agentlens::MarkdownBlock &block,
          | bold;
   }
 
-  case agentlens::MarkdownBlockKind::ListItem: {
+  case loupe::MarkdownBlockKind::ListItem: {
     const int indent = std::min(block.level, 6) * 2;
     std::string marker(static_cast<std::size_t>(indent), ' ');
     marker += block.marker.empty() ? "-" : block.marker;
@@ -714,7 +714,7 @@ ftxui::Element render_markdown_block(const agentlens::MarkdownBlock &block,
     });
   }
 
-  case agentlens::MarkdownBlockKind::Quote:
+  case loupe::MarkdownBlockKind::Quote:
     return hbox({
         text("> ") | color(Color::GrayDark),
         render_inline_spans(block.spans, Color::GrayLight, search_query,
@@ -723,7 +723,7 @@ ftxui::Element render_markdown_block(const agentlens::MarkdownBlock &block,
             | xflex,
     });
 
-  case agentlens::MarkdownBlockKind::Paragraph:
+  case loupe::MarkdownBlockKind::Paragraph:
     return render_inline_spans(block.spans, Color::GrayLight, search_query,
                                current_search_match);
   }
@@ -737,7 +737,7 @@ render_markdown_text(std::string_view content, std::string_view search_query,
   using namespace ftxui;
 
   Elements rows;
-  for (const auto &block : agentlens::parse_markdown_text(content)) {
+  for (const auto &block : loupe::parse_markdown_text(content)) {
     rows.push_back(
         render_markdown_block(block, search_query, current_search_match));
   }
@@ -759,7 +759,7 @@ void clamp_selection(AppState &state) {
 }
 
 void refresh_search_matches(AppState &state) {
-  state.search_matches = agentlens::find_message_matches(state.parsed.messages,
+  state.search_matches = loupe::find_message_matches(state.parsed.messages,
                                                          state.search_query);
 }
 
@@ -788,7 +788,7 @@ std::string search_progress(const AppState &state) {
   }
 
   const auto ordinal =
-      agentlens::match_ordinal(state.search_matches, state.selected);
+      loupe::match_ordinal(state.search_matches, state.selected);
   if (!ordinal.has_value()) {
     return std::to_string(state.search_matches.size()) + " matches " + label;
   }
@@ -818,11 +818,11 @@ void update_search_preview(AppState &state) {
     return;
   }
 
-  state.search_matches = agentlens::find_message_matches(state.parsed.messages,
+  state.search_matches = loupe::find_message_matches(state.parsed.messages,
                                                          state.search_input);
-  const auto match = agentlens::find_next_match(
+  const auto match = loupe::find_next_match(
       state.search_matches, state.search_origin_selected,
-      agentlens::SearchDirection::Forward, true);
+      loupe::SearchDirection::Forward, true);
   if (match.has_value()) {
     state.selected = *match;
     use_selection_scroll(state.scroll, viewer_selected_offset(state));
@@ -851,9 +851,9 @@ void commit_search(AppState &state) {
   state.search_query = state.search_input;
   refresh_search_matches(state);
 
-  const auto match = agentlens::find_next_match(
+  const auto match = loupe::find_next_match(
       state.search_matches, state.search_origin_selected,
-      agentlens::SearchDirection::Forward, true);
+      loupe::SearchDirection::Forward, true);
   if (!match.has_value()) {
     restore_search_origin(state);
     state.status = "no matches";
@@ -865,7 +865,7 @@ void commit_search(AppState &state) {
   state.status.clear();
 }
 
-void jump_to_search_match(AppState &state, agentlens::SearchDirection direction,
+void jump_to_search_match(AppState &state, loupe::SearchDirection direction,
                           bool include_selected) {
   if (state.search_query.empty()) {
     state.status = "no active search";
@@ -873,7 +873,7 @@ void jump_to_search_match(AppState &state, agentlens::SearchDirection direction,
   }
 
   refresh_search_matches(state);
-  const auto match = agentlens::find_next_match(
+  const auto match = loupe::find_next_match(
       state.search_matches, state.selected, direction, include_selected);
   if (!match.has_value()) {
     state.status = "no matches";
@@ -924,17 +924,17 @@ bool handle_mouse_scroll(AppState &state, ftxui::Event &event) {
 }
 
 void reload(AppState &state) {
-  state.parsed = agentlens::parse_log_file(state.path);
+  state.parsed = loupe::parse_log_file(state.path);
   clamp_selection(state);
   if (!state.search_query.empty()) {
-    jump_to_search_match(state, agentlens::SearchDirection::Forward, true);
+    jump_to_search_match(state, loupe::SearchDirection::Forward, true);
   }
   state.status =
       "reloaded " + std::to_string(state.parsed.messages.size()) + " messages";
 }
 
 ftxui::Element
-render_message(const agentlens::LogMessage &message, bool selected,
+render_message(const loupe::LogMessage &message, bool selected,
                std::string_view search_query, bool current_search_match) {
   using namespace ftxui;
 
@@ -965,7 +965,7 @@ render_message(const agentlens::LogMessage &message, bool selected,
   Element body = message.content.empty()
                    ? text("(empty)") | dim
                    : render_markdown_text(
-                         clipped_content(agentlens::format_structured_text(
+                         clipped_content(loupe::format_structured_text(
                              message.content)),
                          search_query, current_search_match);
 
@@ -1069,7 +1069,7 @@ estimated_viewer_content_height(const AppState &state, int viewport_width) {
       ++rows;
     } else {
       rows += estimated_wrapped_lines(
-          clipped_content(agentlens::format_structured_text(message.content)),
+          clipped_content(loupe::format_structured_text(message.content)),
           viewport_width);
     }
     for (const auto &annotation : message.annotations) {
@@ -1082,7 +1082,7 @@ estimated_viewer_content_height(const AppState &state, int viewport_width) {
 
 ftxui::Element
 render_scrollable_content(ftxui::Element content,
-                          agentlens::ScrollState &scroll, int viewport_height,
+                          loupe::ScrollState &scroll, int viewport_height,
                           double estimated_content_height = 0.0) {
   if (content) {
     content->ComputeRequirement();
@@ -1127,7 +1127,7 @@ ftxui::Element render_browser(BrowserState &state, int viewport_height) {
                 + std::to_string(state.visible_entries.size());
 
   Elements status_items{
-      text(" AgentLens ")
+      text(" Loupe ")
           | bold
           | color(Color::Black)
           | bgcolor(Color::MagentaLight),
@@ -1207,7 +1207,7 @@ ftxui::Element render(AppState &state, bool can_return_to_browser,
                 + std::to_string(state.parsed.messages.size());
 
   Elements status_items{
-      text(" AgentLens ")
+      text(" Loupe ")
           | bold
           | color(Color::Black)
           | bgcolor(Color::MagentaLight),
@@ -1302,11 +1302,11 @@ handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
     return true;
   }
   if (event == ftxui::Event::n) {
-    jump_to_search_match(state, agentlens::SearchDirection::Forward, false);
+    jump_to_search_match(state, loupe::SearchDirection::Forward, false);
     return true;
   }
   if (event == ftxui::Event::N) {
-    jump_to_search_match(state, agentlens::SearchDirection::Backward, false);
+    jump_to_search_match(state, loupe::SearchDirection::Backward, false);
     return true;
   }
   if (event == ftxui::Event::q || event == ftxui::Event::Escape) {
@@ -1461,7 +1461,7 @@ render_app(ApplicationState &state, int screen_height, int screen_width) {
 }
 
 void advance_visible_scroll_animation(ApplicationState &state,
-                                      agentlens::ScrollClock::time_point now) {
+                                      loupe::ScrollClock::time_point now) {
   if (state.showing_browser) {
     advance_scroll_animation(state.browser.scroll, now);
     return;
@@ -1531,7 +1531,7 @@ int main(int argc, char **argv) {
   const ftxui::Closure quit = screen.ExitLoopClosure();
 
   auto component = ftxui::Renderer([&] {
-    advance_visible_scroll_animation(state, agentlens::ScrollClock::now());
+    advance_visible_scroll_animation(state, loupe::ScrollClock::now());
     auto frame = render_app(state, screen.dimy(), screen.dimx());
     if (visible_scroll_animation_active(state)) {
       screen.RequestAnimationFrame();

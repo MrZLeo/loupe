@@ -6,9 +6,9 @@
 #include <string_view>
 #include <vector>
 
-#include "project/log_message.hpp"
+#include "loupe/log_message.hpp"
 
-namespace agentlens {
+namespace loupe {
 struct ParseResult {
   std::vector<LogMessage> messages;
   std::vector<std::string> errors;
@@ -16,6 +16,6 @@ struct ParseResult {
 
 ParseResult parse_log_content(std::string_view content);
 ParseResult parse_log_file(const std::filesystem::path &path);
-} // namespace agentlens
+} // namespace loupe
 
 #endif // PROJECT_LOG_PARSER_HPP_

@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace agentlens {
+namespace loupe {
 std::string format_structured_text(std::string_view text);
 }
 

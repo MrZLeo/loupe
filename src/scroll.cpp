@@ -1,9 +1,9 @@
-#include "project/scroll.hpp"
+#include "loupe/scroll.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace agentlens {
+namespace loupe {
 namespace {
 double clamp_non_negative(double value) { return std::max(0.0, value); }
 
@@ -109,4 +109,4 @@ double indexed_scroll_offset(std::size_t index, double rows_per_item) {
   return static_cast<double>(index) * rows_per_item;
 }
 
-} // namespace agentlens
+} // namespace loupe

@@ -4,7 +4,7 @@
 #include <chrono>
 #include <cstddef>
 
-namespace agentlens {
+namespace loupe {
 
 using ScrollClock = std::chrono::steady_clock;
 
@@ -34,6 +34,6 @@ int content_viewport_height(int screen_height);
 int content_viewport_width(int screen_width);
 double indexed_scroll_offset(std::size_t index, double rows_per_item);
 
-} // namespace agentlens
+} // namespace loupe
 
 #endif // PROJECT_SCROLL_HPP_

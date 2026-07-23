@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-namespace agentlens {
+namespace loupe {
 
 enum class MarkdownBlockKind {
   Paragraph,
@@ -34,6 +34,6 @@ struct MarkdownBlock {
 
 std::vector<MarkdownBlock> parse_markdown_text(std::string_view text);
 
-} // namespace agentlens
+} // namespace loupe
 
 #endif // PROJECT_MARKDOWN_TEXT_HPP_

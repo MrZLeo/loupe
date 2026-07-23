@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace agentlens {
+namespace loupe {
 struct LogMessage {
   std::string role{"unknown"};
   std::string content;
@@ -14,6 +14,6 @@ struct LogMessage {
   std::string raw_type;
   std::size_t source_line{0};
 };
-} // namespace agentlens
+} // namespace loupe
 
 #endif // PROJECT_LOG_MESSAGE_HPP_

@@ -1,11 +1,11 @@
-#include "project/markdown_text.hpp"
+#include "loupe/markdown_text.hpp"
 
 #include <cctype>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace agentlens {
+namespace loupe {
 namespace {
 struct InlineStyle {
   bool bold{false};
@@ -471,4 +471,4 @@ std::vector<MarkdownBlock> parse_markdown_text(std::string_view text) {
   return blocks;
 }
 
-} // namespace agentlens
+} // namespace loupe
