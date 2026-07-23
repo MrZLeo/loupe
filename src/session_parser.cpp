@@ -1,0 +1,212 @@
+#include "loupe/session_parser.hpp"
+
+#include "loupe/log_parser.hpp"
+
+#include "session_parser_internal.hpp"
+
+#include <fstream>
+#include <functional>
+#include <sstream>
+#include <string>
+#include <unordered_set>
+#include <utility>
+
+namespace loupe {
+namespace detail {
+
+void add_diagnostic(SessionParseResult &result, DiagnosticSeverity severity,
+                    DiagnosticCode code, std::string message,
+                    std::size_t source_line) {
+  result.diagnostics.push_back(Diagnostic{
+      .severity = severity,
+      .code = code,
+      .message = std::move(message),
+      .source_line = source_line,
+  });
+}
+
+RecordIR make_invalid_record(std::size_t sequence, std::size_t source_line,
+                             std::string_view raw) {
+  return RecordIR{
+      .sequence = sequence,
+      .source_line = source_line,
+      .native_sequence = std::nullopt,
+      .native_type = "invalid_json",
+      .native_id = {},
+      .native_parent_id = std::nullopt,
+      .navigation_parent_id = std::nullopt,
+      .timestamp = {},
+      .raw_json = std::string{raw},
+      .events = {},
+  };
+}
+
+namespace {
+Role generic_role(std::string_view value) {
+  if (value == "user") {
+    return Role::User;
+  }
+  if (value == "assistant") {
+    return Role::Assistant;
+  }
+  if (value == "system") {
+    return Role::System;
+  }
+  if (value == "developer") {
+    return Role::Developer;
+  }
+  if (value == "agent") {
+    return Role::Agent;
+  }
+  return Role::Unknown;
+}
+
+} // namespace
+
+SessionParseResult parse_generic_session(std::string_view content) {
+  SessionParseResult result;
+  result.session.format = LogFormat::Generic;
+
+  const ParseResult legacy = parse_log_content(content);
+  for (const auto &error : legacy.errors) {
+    add_diagnostic(result, DiagnosticSeverity::Error,
+                   DiagnosticCode::InvalidJson, error);
+  }
+
+  for (const auto &message : legacy.messages) {
+    RecordIR record{
+        .sequence = result.session.records.size(),
+        .source_line = message.source_line,
+        .native_sequence = std::nullopt,
+        .native_type = message.raw_type,
+        .native_id = {},
+        .native_parent_id = std::nullopt,
+        .navigation_parent_id = std::nullopt,
+        .timestamp = message.timestamp,
+        .raw_json = {},
+        .events = {},
+    };
+
+    MessageEvent event{
+        .role = generic_role(message.role),
+        .raw_role = message.role,
+        .provider = {},
+        .model = {},
+        .phase = {},
+        .content = {TextContent{.text = message.content}},
+    };
+    append_event(record, std::move(event));
+
+    for (const auto &annotation : message.annotations) {
+      append_event(record, MetadataEvent{
+                               .name = "display_annotation",
+                               .value = annotation,
+                           });
+    }
+    result.session.records.push_back(std::move(record));
+  }
+
+  return result;
+}
+
+} // namespace detail
+
+namespace {
+
+struct DiagnosticIdentity {
+  DiagnosticCode code;
+  std::size_t source_line;
+  std::string message;
+
+  bool operator==(const DiagnosticIdentity &) const = default;
+};
+
+struct DiagnosticIdentityHash {
+  std::size_t operator()(const DiagnosticIdentity &identity) const {
+    std::size_t hash = std::hash<int>{}(static_cast<int>(identity.code));
+    hash ^= std::hash<std::size_t>{}(identity.source_line)
+          + 0x9e3779b9U
+          + (hash << 6U)
+          + (hash >> 2U);
+    hash ^= std::hash<std::string>{}(identity.message)
+          + 0x9e3779b9U
+          + (hash << 6U)
+          + (hash >> 2U);
+    return hash;
+  }
+};
+
+DiagnosticIdentity diagnostic_identity(const Diagnostic &diagnostic) {
+  return DiagnosticIdentity{
+      .code = diagnostic.code,
+      .source_line = diagnostic.source_line,
+      .message = diagnostic.message,
+  };
+}
+
+} // namespace
+
+SessionParseResult
+parse_session_content(std::string_view content, LogFormat format) {
+  SessionParseResult result;
+  switch (format) {
+  case LogFormat::Pi:
+    result = detail::parse_pi_session(content);
+    break;
+  case LogFormat::Codex:
+    result = detail::parse_codex_rollout(content);
+    break;
+  case LogFormat::ClaudeCode:
+    result = detail::parse_claudecode_transcript(content);
+    break;
+  case LogFormat::Generic:
+    result = detail::parse_generic_session(content);
+    break;
+  }
+
+  auto validation = validate_session(result.session);
+  std::unordered_set<DiagnosticIdentity, DiagnosticIdentityHash>
+      reported_diagnostics;
+  reported_diagnostics.reserve(result.diagnostics.size() + validation.size());
+  for (const auto &diagnostic : result.diagnostics) {
+    reported_diagnostics.insert(diagnostic_identity(diagnostic));
+  }
+  for (auto &diagnostic : validation) {
+    if (reported_diagnostics.insert(diagnostic_identity(diagnostic)).second) {
+      result.diagnostics.push_back(std::move(diagnostic));
+    }
+  }
+  return result;
+}
+
+SessionParseResult
+parse_session_file(const std::filesystem::path &path, LogFormat format) {
+  std::ifstream input{path, std::ios::binary};
+  if (!input) {
+    SessionParseResult result;
+    result.session.format = format;
+    result.session.source_path = path;
+    detail::add_diagnostic(result, DiagnosticSeverity::Fatal,
+                           DiagnosticCode::IoError,
+                           "failed to open " + path.string());
+    return result;
+  }
+
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  if (input.bad()) {
+    SessionParseResult result;
+    result.session.format = format;
+    result.session.source_path = path;
+    detail::add_diagnostic(result, DiagnosticSeverity::Fatal,
+                           DiagnosticCode::IoError,
+                           "failed while reading " + path.string());
+    return result;
+  }
+
+  SessionParseResult result = parse_session_content(buffer.str(), format);
+  result.session.source_path = path;
+  return result;
+}
+
+} // namespace loupe

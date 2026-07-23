@@ -1,8 +1,17 @@
 set(sources
+  src/claudecode_parser.cpp
+  src/codex_parser.cpp
+  src/jsonl_reader.cpp
+  src/log_format.cpp
   src/log_parser.cpp
   src/markdown_text.cpp
+  src/message_projection.cpp
+  src/pi_parser.cpp
   src/scroll.cpp
   src/search.cpp
+  src/session_ir.cpp
+  src/session_parser.cpp
+  src/session_validation.cpp
   src/structured_text.cpp
 )
 
@@ -12,18 +21,26 @@ set(exe_sources
 )
 
 set(headers
+  include/loupe/log_format.hpp
   include/loupe/log_message.hpp
   include/loupe/log_parser.hpp
   include/loupe/markdown_text.hpp
+  include/loupe/message_projection.hpp
   include/loupe/scroll.hpp
   include/loupe/search.hpp
+  include/loupe/session_ir.hpp
+  include/loupe/session_parser.hpp
   include/loupe/structured_text.hpp
 )
 
 set(test_sources
+  src/codex_parser_test.cpp
   src/log_parser_test.cpp
   src/markdown_text_test.cpp
+  src/pi_parser_test.cpp
   src/scroll_test.cpp
   src/search_test.cpp
+  src/session_ir_test.cpp
+  src/session_parser_test.cpp
   src/structured_text_test.cpp
 )
