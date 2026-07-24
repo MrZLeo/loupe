@@ -29,6 +29,20 @@ TEST_CASE("row scrolling clamps to content bounds", "[scroll]") {
   REQUIRE(scroll.top_row == 1);
 }
 
+TEST_CASE("overscrolling does not delay the first reverse step", "[scroll]") {
+  loupe::ScrollState scroll;
+  loupe::update_scroll_layout(scroll, 0, 3);
+
+  loupe::scroll_by_rows(scroll, 3);
+  for (int event = 0; event < 1000; ++event) {
+    loupe::scroll_by_rows(scroll, 1);
+  }
+  REQUIRE(scroll.top_row == scroll.max_top_row);
+
+  loupe::scroll_by_rows(scroll, -1);
+  REQUIRE(scroll.top_row == scroll.max_top_row - 1);
+}
+
 TEST_CASE("selection navigation resumes focus following", "[scroll]") {
   loupe::ScrollState scroll;
   loupe::update_scroll_layout(scroll, 2, 20);
@@ -40,4 +54,19 @@ TEST_CASE("selection navigation resumes focus following", "[scroll]") {
 
   REQUIRE(scroll.follow_focus);
   REQUIRE(scroll.top_row == 12);
+}
+
+TEST_CASE("scroll progress follows the visible viewport", "[scroll]") {
+  loupe::ScrollState scroll;
+
+  REQUIRE(loupe::scroll_progress_percent(scroll) == 100);
+
+  loupe::update_scroll_layout(scroll, 0, 8);
+  REQUIRE(loupe::scroll_progress_percent(scroll) == 0);
+
+  loupe::scroll_by_rows(scroll, 3);
+  REQUIRE(loupe::scroll_progress_percent(scroll) == 37);
+
+  loupe::scroll_by_rows(scroll, 20);
+  REQUIRE(loupe::scroll_progress_percent(scroll) == 100);
 }

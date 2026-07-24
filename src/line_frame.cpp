@@ -6,6 +6,7 @@
 #include <ftxui/screen/screen.hpp>
 #include <ftxui/util/autoreset.hpp>
 #include <memory>
+#include <string>
 #include <utility>
 
 namespace loupe {
@@ -84,10 +85,37 @@ private:
   bool layout_pending_{false};
 };
 
+class ScrollProgressIndicator final : public ftxui::Node {
+public:
+  explicit ScrollProgressIndicator(const ScrollState &scroll)
+      : scroll_(scroll) {}
+
+  void ComputeRequirement() override {
+    requirement_.min_x = 4;
+    requirement_.min_y = 1;
+  }
+
+  void Render(ftxui::Screen &screen) override {
+    auto label =
+        ftxui::text(std::to_string(scroll_progress_percent(scroll_)) + "%")
+        | ftxui::align_right;
+    label->ComputeRequirement();
+    label->SetBox(box_);
+    label->Render(screen);
+  }
+
+private:
+  const ScrollState &scroll_;
+};
+
 } // namespace
 
 ftxui::Element line_frame(ftxui::Element content, ScrollState &scroll) {
   return std::make_shared<LineFrame>(std::move(content), scroll);
+}
+
+ftxui::Element scroll_progress_indicator(const ScrollState &scroll) {
+  return std::make_shared<ScrollProgressIndicator>(scroll);
 }
 
 } // namespace loupe

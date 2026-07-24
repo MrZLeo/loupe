@@ -30,3 +30,29 @@ TEST_CASE("manual scrolling survives wrapped layout passes", "[scroll]") {
   REQUIRE(scroll.top_row == scroll.max_top_row);
   REQUIRE(screen.ToString().find("omega") != std::string::npos);
 }
+
+TEST_CASE("progress indicator uses the layout from the current frame",
+          "[scroll]") {
+  loupe::ScrollState scroll;
+  auto document = ftxui::vbox({
+      loupe::line_frame(ftxui::vbox({
+                            ftxui::text("zero"),
+                            ftxui::text("one"),
+                            ftxui::text("two"),
+                            ftxui::text("three"),
+                            ftxui::text("four"),
+                        }),
+                        scroll)
+          | ftxui::flex,
+      loupe::scroll_progress_indicator(scroll),
+  });
+  auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(8),
+                                      ftxui::Dimension::Fixed(3));
+
+  ftxui::Render(screen, document);
+  REQUIRE(screen.ToString().find("0%") != std::string::npos);
+
+  loupe::scroll_by_rows(scroll, scroll.max_top_row);
+  ftxui::Render(screen, document);
+  REQUIRE(screen.ToString().find("100%") != std::string::npos);
+}

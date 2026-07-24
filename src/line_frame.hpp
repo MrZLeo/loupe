@@ -8,6 +8,7 @@
 namespace loupe {
 
 ftxui::Element line_frame(ftxui::Element content, ScrollState &scroll);
+ftxui::Element scroll_progress_indicator(const ScrollState &scroll);
 
 } // namespace loupe
 

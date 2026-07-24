@@ -1173,6 +1173,11 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
                              | color(Color::GrayDark),
                      })
                    : text(help_text) | color(Color::GrayDark);
+  Element footer = hbox({
+      help | flex,
+      text(" "),
+      loupe::scroll_progress_indicator(state.scroll) | color(Color::GrayLight),
+  });
 
   return vbox({
              hbox(std::move(status_items)),
@@ -1181,7 +1186,7 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
                  vbox(std::move(rows)) | vscroll_indicator, state.scroll)
                  | flex,
              separatorEmpty(),
-             help,
+             footer,
          })
        | flex;
 }

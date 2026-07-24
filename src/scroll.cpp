@@ -23,4 +23,14 @@ void scroll_by_rows(ScrollState &scroll, int rows) {
   scroll.top_row += clamped_rows;
 }
 
+int scroll_progress_percent(const ScrollState &scroll) {
+  if (scroll.max_top_row <= 0) {
+    return 100;
+  }
+
+  const int top_row = std::clamp(scroll.top_row, 0, scroll.max_top_row);
+  return static_cast<int>(
+      static_cast<long long>(top_row) * 100 / scroll.max_top_row);
+}
+
 } // namespace loupe

@@ -177,6 +177,8 @@ CPMAddPackage(
   NAME FTXUI
   GITHUB_REPOSITORY ArthurSonzogni/FTXUI
   VERSION 7.0.1
+  PATCHES
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/ftxui-terminal-input-burst.patch"
   OPTIONS
     "FTXUI_BUILD_DOCS OFF"
     "FTXUI_BUILD_EXAMPLES OFF"
