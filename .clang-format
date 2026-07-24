@@ -1,3 +1,4 @@
+---
 BasedOnStyle: LLVM
 BreakTemplateDeclarations: Yes
 BreakBinaryOperations: RespectPrecedence
@@ -5,4 +6,4 @@ BreakBeforeBinaryOperators: NonAssignment
 AlignOperands: AlignAfterOperator
 BreakAfterReturnType: Automatic
 PenaltyReturnTypeOnItsOwnLine: 0
-
+...
