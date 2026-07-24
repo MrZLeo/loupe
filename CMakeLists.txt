@@ -31,6 +31,13 @@ if (UNIX)
     add_compile_options("$<$<CONFIG:DEBUG>:-D_DEBUG>")    #this will allow to use same _DEBUG macro available in both Linux as well as Windows - MSCV environment. Easy to put Debug specific code.
 endif (UNIX)
 
+# Select the MSVC runtime before creating any project or dependency targets.
+# Callers can override this with -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+# when producing a standalone Windows executable.
+if(MSVC AND NOT CMAKE_MSVC_RUNTIME_LIBRARY)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
 
 #
 # Setup alternative names
@@ -231,18 +238,6 @@ project_link_dependencies(${PROJECT_NAME})
 if(${PROJECT_NAME}_BUILD_EXECUTABLE AND ${PROJECT_NAME}_ENABLE_UNIT_TESTING)
   project_link_dependencies(${PROJECT_NAME}_LIB)
 endif()
-
-# For Windows, it is necessary to link with the MultiThreaded library.
-# Depending on how the rest of the project's dependencies are linked, it might be necessary
-# to change the line to statically link with the library.
-#
-# This is done as follows:
-#
-# set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-#
-# On Linux and Mac this variable is ignored. If any issues rise from it, try commenting it out
-# and letting CMake decide how to link with it.
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 verbose_message("Successfully added all dependencies and linked against them.")
 

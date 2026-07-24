@@ -3,196 +3,274 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
-  PROJECT_NAME: "modern-cpp-template"
-  BUILD_TYPE: Release
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+  RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}
 
 jobs:
-  build:
-    name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-        - {
-            name: "Windows Latest MSVC",
-            artifact_ext: '.zip',
-            os: windows-latest,
-            cc: "cl",
-            cxx: "cl",
-            environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat",
-          }
-        - {
-            name: "Ubuntu Latest GCC",
-            artifact_ext: '.tar.gz',
-            os: ubuntu-latest,
-            cc: "gcc",
-            cxx: "g++",
-          }
-        - {
-            name: "macOS Latest Clang",
-            artifact_ext: '.tar.gz',
-            os: macos-latest,
-            cc: "clang",
-            cxx: "clang++",
-          }
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-24.04
 
     steps:
-    - name: set version name (Windows)
-      id: version_win
-      if: ${{ runner.os == 'Windows' }}
-      shell: pwsh
-      run: |
-        $TAG = (${env:GITHUB_REF} -replace 'refs/tags/', '')
-        echo "name=$TAG" >> ${env:GITHUB_OUTPUT}
-    
-    - name: set version name
-      id: version
-      if: ${{ runner.os != 'Windows' }}
-      run: |
-        TAG=${GITHUB_REF#refs/tags/}
-        echo "name=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Check out source
+        uses: actions/checkout@v4
 
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Cache CPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: linux-glibc-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
 
-    - name: cache CPM downloads
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.CPM_SOURCE_CACHE }}
-        key: ${{ runner.os }}-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            binutils \
+            cmake \
+            file \
+            g++ \
+            git \
+            libc6-dev \
+            ninja-build \
+            patch
 
-    - name: configure (Windows)
-      if: ${{ runner.os == 'Windows' }}
-      run: cmake -Bbuild -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DCPM_SOURCE_CACHE="$env:CPM_SOURCE_CACHE"
+      - name: Build
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXE_LINKER_FLAGS=-static \
+            -DCPM_SOURCE_CACHE="$CPM_SOURCE_CACHE" \
+            -DLoupe_ENABLE_UNIT_TESTING=ON
+          cmake --build build
 
-    - name: configure
-      if: ${{ runner.os != 'Windows' }}
-      run: cmake -Bbuild -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DCPM_SOURCE_CACHE="$CPM_SOURCE_CACHE"
-      
-    - name: build (Windows)
-      if: ${{ runner.os == 'Windows' }}
-      run: cmake --build build --config "$env:BUILD_TYPE" -j4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
-    - name: build
-      if: ${{ runner.os != 'Windows' }}
-      run: cmake --build build --config "$BUILD_TYPE" -j4
+      - name: Verify and package
+        run: |
+          set -euo pipefail
 
-    - name: run tests (Windows)
-      if: ${{ runner.os == 'Windows' }}
-      run: |
-        cd build
-        ctest -C "$env:BUILD_TYPE" -VV
+          binary=build/bin/Release/loupe
+          strip --strip-unneeded "$binary"
+          file "$binary"
+          if readelf -l "$binary" | grep -q "INTERP"; then
+            echo "error: Linux release contains a dynamic interpreter" >&2
+            exit 1
+          fi
+          if readelf -d "$binary" | grep -q "NEEDED"; then
+            echo "error: Linux release contains dynamic dependencies" >&2
+            exit 1
+          fi
+          "$binary" --version
 
-    - name: run tests
-      if: ${{ runner.os != 'Windows' }}
-      run: |
-        cd build
-        ctest -C "$BUILD_TYPE" -VV
+          archive="loupe-${RELEASE_VERSION}-linux-x86_64.tar.gz"
+          mkdir -p dist package
+          install -m 0755 "$binary" package/loupe
+          tar -C package -czf "dist/${archive}" loupe
 
-    # for a release not containing directly the source code, replace the files archived
-    # with the actual files needed (i.e. *.lib/*.a and *.h(pp))
+          extracted="$(mktemp -d)"
+          tar -C "$extracted" -xzf "dist/${archive}"
+          "$extracted/loupe" --version
 
-    - name: generate archive (Windows)
-      if: ${{ runner.os == 'Windows' }}
-      run: |
-        rmdir -r -fo build
-        7z a -tzip $HOME/artifact.zip *
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loupe-${{ env.RELEASE_VERSION }}-linux-x86_64
+          path: dist/loupe-${{ env.RELEASE_VERSION }}-linux-x86_64.tar.gz
+          if-no-files-found: error
 
+  windows:
+    name: Windows x86_64
+    runs-on: windows-2022
 
-    - name: generate archive
-      if: ${{ runner.os != 'Windows' }}
-      run: |
-        rm -rf build
-        tar -cvzf $HOME/artifact.tar.gz .
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
 
-    - name: upload artifacts
-      uses: actions/upload-artifact@v4
-      if: ${{ runner.os == 'Windows' }}
-      with:
-        name: ${{ runner.os }}-${{ steps.version_win.outputs.name }}
-        path: '~/artifact.*'
+      - name: Cache CPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: windows-msvc-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
 
-    - name: upload artifacts
-      uses: actions/upload-artifact@v4
-      if: ${{ runner.os != 'Windows' }}
-      with:
-        name: ${{ runner.os }}-${{ steps.version.outputs.name }}
-        path: '~/artifact.*'
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DCPM_SOURCE_CACHE="$env:CPM_SOURCE_CACHE" `
+            -DLoupe_ENABLE_UNIT_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Verify and package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $binary = "build/bin/Release/loupe.exe"
+
+          & $binary --version
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          $dumpbin = Get-ChildItem `
+            "$installPath/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $dumpbin) {
+            throw "dumpbin.exe was not found"
+          }
+
+          $dumpbinPath = $dumpbin.FullName
+          $dependencies = & $dumpbinPath /dependents $binary
+          if ($LASTEXITCODE -ne 0) {
+            throw "dumpbin.exe failed with exit code $LASTEXITCODE"
+          }
+          $dependencies
+          if (
+            $dependencies -match
+            "(?i)(vcruntime|msvcp|ucrtbase|api-ms-win-crt).*\.dll"
+          ) {
+            throw "Windows release depends on a dynamic MSVC runtime"
+          }
+
+          $archive = "loupe-$env:RELEASE_VERSION-windows-x86_64.zip"
+          New-Item -ItemType Directory -Force dist, package | Out-Null
+          Copy-Item $binary package/loupe.exe
+          Compress-Archive -Path package/loupe.exe -DestinationPath "dist/$archive"
+
+          $extracted = Join-Path $env:RUNNER_TEMP "loupe-release-check"
+          Expand-Archive -Path "dist/$archive" -DestinationPath $extracted
+          & "$extracted/loupe.exe" --version
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loupe-${{ env.RELEASE_VERSION }}-windows-x86_64
+          path: dist/loupe-${{ env.RELEASE_VERSION }}-windows-x86_64.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    runs-on: macos-15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Cache CPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: macos-universal-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
+
+      - name: Build
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -DCPM_SOURCE_CACHE="$CPM_SOURCE_CACHE" \
+            -DLoupe_ENABLE_UNIT_TESTING=ON
+          cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify and package
+        run: |
+          set -euo pipefail
+
+          binary=build/bin/Release/loupe
+          strip -x "$binary"
+          codesign --force --sign - "$binary"
+          codesign --verify --verbose "$binary"
+          file "$binary"
+
+          architectures="$(lipo -archs "$binary")"
+          for architecture in arm64 x86_64; do
+            if [[ " ${architectures} " != *" ${architecture} "* ]]; then
+              echo "error: macOS release is missing ${architecture}" >&2
+              exit 1
+            fi
+          done
+
+          while read -r dependency; do
+            case "$dependency" in
+              /usr/lib/* | /System/Library/*) ;;
+              *)
+                echo "error: unexpected macOS dependency: $dependency" >&2
+                exit 1
+                ;;
+            esac
+          done < <(otool -L "$binary" | tail -n +2 | awk '{print $1}')
+          "$binary" --version
+
+          archive="loupe-${RELEASE_VERSION}-macos-universal.tar.gz"
+          mkdir -p dist package
+          install -m 0755 "$binary" package/loupe
+          tar -C package -czf "dist/${archive}" loupe
+
+          extracted="$(mktemp -d)"
+          tar -C "$extracted" -xzf "dist/${archive}"
+          "$extracted/loupe" --version
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loupe-${{ env.RELEASE_VERSION }}-macos-universal
+          path: dist/loupe-${{ env.RELEASE_VERSION }}-macos-universal.tar.gz
+          if-no-files-found: error
 
   release:
-    if: contains(github.ref, 'tags/v')
-    runs-on: ubuntu-latest
-    needs: build
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - linux
+      - windows
+      - macos
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
-    - name: set version name
-      id: version
-      run: echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: loupe-${{ env.RELEASE_VERSION }}-*
+          path: dist
+          merge-multiple: true
 
-    - name: create release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ steps.version.outputs.name }}
-        # if needed, you can set the release body here
-        #body: "Release notes"
-        draft: false
-        prerelease: false
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum loupe-* > SHA256SUMS
+          cat SHA256SUMS
 
-    - name: download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: "Linux-${{ steps.version.outputs.name }}"
-        path: ./
-
-    - name: upload ubuntu release asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: "artifact.tar.gz"
-        asset_name: "${{ env.PROJECT_NAME }}-Linux-${{ steps.version.outputs.name }}.tar.gz"
-        asset_content_type: application/x-tar
-
-    - name: download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: "Windows-${{ steps.version.outputs.name }}"
-        path: ./
-
-    - name: upload windows release asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: "artifact.zip"
-        asset_name: "${{ env.PROJECT_NAME }}-Windows-${{ steps.version.outputs.name }}.zip"
-        asset_content_type: application/zip
-
-    - name: download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: "macOS-${{ steps.version.outputs.name }}"
-        path: ./
-
-    - name: upload macos release asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: "./artifact.tar.gz"
-        asset_name: "${{ env.PROJECT_NAME }}-macOS-${{ steps.version.outputs.name }}.tar.gz"
-        asset_content_type: application/x-tar
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --verify-tag \
+              --generate-notes \
+              --title "Loupe ${GITHUB_REF_NAME}"
+          fi
