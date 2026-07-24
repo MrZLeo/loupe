@@ -119,7 +119,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $binary = (Resolve-Path "build/bin/Release/loupe.exe").Path
+          $binaryCandidates = @(
+            Get-ChildItem "build/bin" -Recurse -Filter "loupe.exe" -File
+          )
+          if ($binaryCandidates.Count -ne 1) {
+            throw "Expected one loupe.exe, found $($binaryCandidates.Count)"
+          }
+          $binary = $binaryCandidates[0].FullName
+          Write-Host "Using release binary: $binary"
 
           & $binary --version
 
