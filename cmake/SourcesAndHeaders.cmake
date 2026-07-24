@@ -13,10 +13,13 @@ set(sources
   src/session_parser.cpp
   src/session_validation.cpp
   src/structured_text.cpp
+  src/synchronized_output.cpp
 )
 
 set(exe_sources
   src/main.cpp
+  src/line_frame.cpp
+  src/line_frame.hpp
   ${sources}
 )
 
@@ -31,11 +34,13 @@ set(headers
   include/loupe/session_ir.hpp
   include/loupe/session_parser.hpp
   include/loupe/structured_text.hpp
+  include/loupe/synchronized_output.hpp
 )
 
 set(test_sources
   src/codex_parser_test.cpp
   src/log_parser_test.cpp
+  src/line_frame_test.cpp
   src/markdown_text_test.cpp
   src/pi_parser_test.cpp
   src/scroll_test.cpp
@@ -43,4 +48,5 @@ set(test_sources
   src/session_ir_test.cpp
   src/session_parser_test.cpp
   src/structured_text_test.cpp
+  src/synchronized_output_test.cpp
 )

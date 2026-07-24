@@ -26,7 +26,9 @@
 #include "loupe/search.hpp"
 #include "loupe/session_parser.hpp"
 #include "loupe/structured_text.hpp"
+#include "loupe/synchronized_output.hpp"
 #include "loupe/version.hpp"
+#include "line_frame.hpp"
 
 namespace {
 struct CliOptions {
@@ -88,26 +90,19 @@ enum class HighlightKind {
   Current,
 };
 
-using loupe::advance_scroll_animation;
-using loupe::clamp_scroll_target;
-using loupe::content_viewport_height;
-using loupe::content_viewport_width;
-using loupe::kBrowserEntryRows;
-using loupe::kMouseWheelCells;
-using loupe::kMouseWheelHorizontalCells;
-using loupe::scroll_animation_active;
-using loupe::scroll_by;
-using loupe::scroll_focus_position;
-using loupe::use_selection_scroll;
+constexpr std::size_t kPageMove = 10;
 
-double browser_selected_offset(const BrowserState &state) {
-  return loupe::indexed_scroll_offset(state.selected,
-                                          loupe::kBrowserEntryRows);
-}
-
-double viewer_selected_offset(const AppState &state) {
-  return loupe::indexed_scroll_offset(state.selected,
-                                          loupe::kEstimatedMessageRows);
+int wheel_rows(ftxui::Event &event) {
+  if (!event.is_mouse()) {
+    return 0;
+  }
+  if (event.mouse().button == ftxui::Mouse::WheelUp) {
+    return -1;
+  }
+  if (event.mouse().button == ftxui::Mouse::WheelDown) {
+    return 1;
+  }
+  return 0;
 }
 
 CliParseResult parse_cli_args(int argc, char **argv) {
@@ -205,25 +200,6 @@ std::string clipped_content(const std::string &content) {
     return content;
   }
   return content.substr(0, kMaxContentLength) + "\n[content clipped]";
-}
-
-std::size_t estimated_wrapped_lines(std::string_view text, int width) {
-  const std::size_t line_width = static_cast<std::size_t>(std::max(1, width));
-  std::size_t lines = 0;
-  std::size_t start = 0;
-
-  while (start <= text.size()) {
-    const std::size_t end = text.find('\n', start);
-    const std::size_t length =
-        end == std::string_view::npos ? text.size() - start : end - start;
-    lines += std::max<std::size_t>(1, (length + line_width - 1) / line_width);
-    if (end == std::string_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-
-  return std::max<std::size_t>(1, lines);
 }
 
 std::string clipped_label(std::string_view text) {
@@ -338,6 +314,7 @@ std::string browser_query(const BrowserState &state) {
 }
 
 void apply_browser_filter(BrowserState &state) {
+  loupe::follow_selection(state.scroll);
   state.visible_entries.clear();
   const std::string query = browser_query(state);
 
@@ -349,11 +326,9 @@ void apply_browser_filter(BrowserState &state) {
 
   if (state.visible_entries.empty()) {
     state.selected = 0;
-    use_selection_scroll(state.scroll, 0.0);
     return;
   }
   state.selected = std::min(state.selected, state.visible_entries.size() - 1);
-  use_selection_scroll(state.scroll, browser_selected_offset(state));
 }
 
 void refresh_browser(BrowserState &state) {
@@ -457,47 +432,18 @@ void update_browser_search_preview(BrowserState &state) {
 }
 
 void move_browser_up(BrowserState &state, std::size_t amount) {
-  if (amount > state.selected) {
-    state.selected = 0;
-    use_selection_scroll(state.scroll, browser_selected_offset(state));
-    return;
-  }
-  state.selected -= amount;
-  use_selection_scroll(state.scroll, browser_selected_offset(state));
+  loupe::follow_selection(state.scroll);
+  state.selected -= std::min(state.selected, amount);
 }
 
 void move_browser_down(BrowserState &state, std::size_t amount) {
+  loupe::follow_selection(state.scroll);
   if (state.visible_entries.empty()) {
     state.selected = 0;
-    use_selection_scroll(state.scroll, 0.0);
     return;
   }
   const std::size_t last = state.visible_entries.size() - 1;
-  state.selected = std::min(last, state.selected + amount);
-  use_selection_scroll(state.scroll, browser_selected_offset(state));
-}
-
-bool handle_browser_mouse_scroll(BrowserState &state, ftxui::Event &event) {
-  if (!event.is_mouse()) {
-    return false;
-  }
-
-  switch (event.mouse().button) {
-  case ftxui::Mouse::WheelUp:
-    scroll_by(state.scroll, -kMouseWheelCells);
-    return true;
-  case ftxui::Mouse::WheelDown:
-    scroll_by(state.scroll, kMouseWheelCells);
-    return true;
-  case ftxui::Mouse::WheelLeft:
-    scroll_by(state.scroll, -kMouseWheelHorizontalCells);
-    return true;
-  case ftxui::Mouse::WheelRight:
-    scroll_by(state.scroll, kMouseWheelHorizontalCells);
-    return true;
-  default:
-    return false;
-  }
+  state.selected += std::min(last - state.selected, amount);
 }
 
 const BrowserEntry *selected_browser_entry(const BrowserState &state) {
@@ -792,13 +738,12 @@ render_markdown_text(std::string_view content, std::string_view search_query,
 }
 
 void clamp_selection(AppState &state) {
+  loupe::follow_selection(state.scroll);
   if (state.parsed.messages.empty()) {
     state.selected = 0;
-    use_selection_scroll(state.scroll, 0.0);
     return;
   }
   state.selected = std::min(state.selected, state.parsed.messages.size() - 1);
-  use_selection_scroll(state.scroll, viewer_selected_offset(state));
 }
 
 void refresh_search_matches(AppState &state) {
@@ -807,14 +752,13 @@ void refresh_search_matches(AppState &state) {
 }
 
 void restore_search_origin(AppState &state) {
+  loupe::follow_selection(state.scroll);
   if (state.parsed.messages.empty()) {
     state.selected = 0;
-    use_selection_scroll(state.scroll, 0.0);
     return;
   }
   state.selected =
       std::min(state.search_origin_selected, state.parsed.messages.size() - 1);
-  use_selection_scroll(state.scroll, viewer_selected_offset(state));
 }
 
 std::string search_progress(const AppState &state) {
@@ -844,6 +788,7 @@ std::string search_progress(const AppState &state) {
 }
 
 void begin_search(AppState &state) {
+  loupe::follow_selection(state.scroll);
   state.search_active = true;
   state.search_origin_selected = state.selected;
   state.search_input.clear();
@@ -868,7 +813,6 @@ void update_search_preview(AppState &state) {
       loupe::SearchDirection::Forward, true);
   if (match.has_value()) {
     state.selected = *match;
-    use_selection_scroll(state.scroll, viewer_selected_offset(state));
   } else {
     restore_search_origin(state);
   }
@@ -904,7 +848,7 @@ void commit_search(AppState &state) {
   }
 
   state.selected = *match;
-  use_selection_scroll(state.scroll, viewer_selected_offset(state));
+  loupe::follow_selection(state.scroll);
   state.status.clear();
 }
 
@@ -924,46 +868,23 @@ void jump_to_search_match(AppState &state, loupe::SearchDirection direction,
   }
 
   state.selected = *match;
-  use_selection_scroll(state.scroll, viewer_selected_offset(state));
+  loupe::follow_selection(state.scroll);
   state.status.clear();
 }
 
 void move_up(AppState &state, std::size_t amount) {
-  if (amount > state.selected) {
-    state.selected = 0;
-    use_selection_scroll(state.scroll, viewer_selected_offset(state));
-    return;
-  }
-  state.selected -= amount;
-  use_selection_scroll(state.scroll, viewer_selected_offset(state));
+  loupe::follow_selection(state.scroll);
+  state.selected -= std::min(state.selected, amount);
 }
 
 void move_down(AppState &state, std::size_t amount) {
+  loupe::follow_selection(state.scroll);
   if (state.parsed.messages.empty()) {
     state.selected = 0;
-    use_selection_scroll(state.scroll, 0.0);
     return;
   }
   const std::size_t last = state.parsed.messages.size() - 1;
-  state.selected = std::min(last, state.selected + amount);
-  use_selection_scroll(state.scroll, viewer_selected_offset(state));
-}
-
-bool handle_mouse_scroll(AppState &state, ftxui::Event &event) {
-  if (!event.is_mouse()) {
-    return false;
-  }
-
-  switch (event.mouse().button) {
-  case ftxui::Mouse::WheelUp:
-    scroll_by(state.scroll, -kMouseWheelCells);
-    return true;
-  case ftxui::Mouse::WheelDown:
-    scroll_by(state.scroll, kMouseWheelCells);
-    return true;
-  default:
-    return false;
-  }
+  state.selected += std::min(last - state.selected, amount);
 }
 
 void reload(AppState &state) {
@@ -1101,52 +1022,7 @@ ftxui::Element render_browser_empty(const BrowserState &state) {
   return vbox(std::move(lines)) | flex;
 }
 
-double
-estimated_viewer_content_height(const AppState &state, int viewport_width) {
-  if (state.parsed.messages.empty()) {
-    return static_cast<double>(state.parsed.errors.size() + 2);
-  }
-
-  std::size_t rows = 0;
-  for (const auto &message : state.parsed.messages) {
-    ++rows; // Metadata.
-    if (message.content.empty()) {
-      ++rows;
-    } else {
-      rows += estimated_wrapped_lines(
-          clipped_content(loupe::format_structured_text(message.content)),
-          viewport_width);
-    }
-    for (const auto &annotation : message.annotations) {
-      rows += estimated_wrapped_lines(annotation, viewport_width);
-    }
-    ++rows; // Separator.
-  }
-  return static_cast<double>(rows);
-}
-
-ftxui::Element
-render_scrollable_content(ftxui::Element content,
-                          loupe::ScrollState &scroll, int viewport_height,
-                          double estimated_content_height = 0.0) {
-  if (content) {
-    content->ComputeRequirement();
-    const double content_height =
-        std::max(static_cast<double>(content->requirement().min_y),
-                 estimated_content_height);
-    clamp_scroll_target(scroll, content_height - viewport_height);
-  }
-
-  if (scroll.manual) {
-    content = content
-            | ftxui::focusPosition(
-                  0, scroll_focus_position(scroll, viewport_height));
-  }
-
-  return content | ftxui::vscroll_indicator | ftxui::yframe | ftxui::flex;
-}
-
-ftxui::Element render_browser(BrowserState &state, int viewport_height) {
+ftxui::Element render_browser(BrowserState &state) {
   using namespace ftxui;
 
   Elements rows;
@@ -1198,25 +1074,23 @@ ftxui::Element render_browser(BrowserState &state, int viewport_height) {
                          text("  enter filter  esc cancel  backspace edit")
                              | color(Color::GrayDark),
                      })
-                   : text("wheel j/k arrows h/l page g/G top/bottom  / find  "
+                   : text("wheel lines  j/k up/down page files  / find  "
                           "enter open  r refresh  q quit")
                          | color(Color::GrayDark);
 
   return vbox({
              hbox(std::move(status_items)),
              separatorEmpty(),
-             render_scrollable_content(
-                 vbox(std::move(rows)), state.scroll, viewport_height,
-                 static_cast<double>(state.visible_entries.size())
-                     * kBrowserEntryRows),
+             loupe::line_frame(
+                 vbox(std::move(rows)) | vscroll_indicator, state.scroll)
+                 | flex,
              separatorEmpty(),
              help,
          })
        | flex;
 }
 
-ftxui::Element render(AppState &state, bool can_return_to_browser,
-                      int viewport_height, int viewport_width) {
+ftxui::Element render(AppState &state, bool can_return_to_browser) {
   using namespace ftxui;
 
   const std::string_view visible_search_query =
@@ -1284,8 +1158,8 @@ ftxui::Element render(AppState &state, bool can_return_to_browser,
                            | color(Color::CyanLight));
   }
 
-  std::string help_text =
-      "wheel j/k arrows page g/G scroll  / search  n/N next/prev  r reload";
+  std::string help_text = "wheel lines  j/k up/down page messages  / search  "
+                          "n/N next/prev  r reload";
   if (can_return_to_browser) {
     help_text += "  b files";
   }
@@ -1303,11 +1177,9 @@ ftxui::Element render(AppState &state, bool can_return_to_browser,
   return vbox({
              hbox(std::move(status_items)),
              separatorEmpty(),
-             render_scrollable_content(
-                 vbox(std::move(rows)), state.scroll, viewport_height,
-                 state.scroll.manual
-                     ? estimated_viewer_content_height(state, viewport_width)
-                     : 0.0),
+             loupe::line_frame(
+                 vbox(std::move(rows)) | vscroll_indicator, state.scroll)
+                 | flex,
              separatorEmpty(),
              help,
          })
@@ -1346,7 +1218,8 @@ bool handle_search_event(AppState &state, const ftxui::Event &event) {
 
 bool
 handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
-  if (handle_mouse_scroll(state, event)) {
+  if (const int rows = wheel_rows(event); rows != 0) {
+    loupe::scroll_by_rows(state.scroll, rows);
     return true;
   }
   if (state.search_active) {
@@ -1377,23 +1250,11 @@ handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
     return true;
   }
   if (event == ftxui::Event::PageDown) {
-    move_down(state, 10);
+    move_down(state, kPageMove);
     return true;
   }
   if (event == ftxui::Event::PageUp) {
-    move_up(state, 10);
-    return true;
-  }
-  if (event == ftxui::Event::g) {
-    state.selected = 0;
-    use_selection_scroll(state.scroll, viewer_selected_offset(state));
-    return true;
-  }
-  if (event == ftxui::Event::G) {
-    if (!state.parsed.messages.empty()) {
-      state.selected = state.parsed.messages.size() - 1;
-    }
-    use_selection_scroll(state.scroll, viewer_selected_offset(state));
+    move_up(state, kPageMove);
     return true;
   }
   if (event == ftxui::Event::r) {
@@ -1447,7 +1308,8 @@ void open_selected_file(ApplicationState &state) {
 bool handle_browser_event(ApplicationState &state, ftxui::Event event,
                           const ftxui::Closure &quit) {
   BrowserState &browser = state.browser;
-  if (handle_browser_mouse_scroll(browser, event)) {
+  if (const int rows = wheel_rows(event); rows != 0) {
+    loupe::scroll_by_rows(browser.scroll, rows);
     return true;
   }
   if (browser.search_active) {
@@ -1473,28 +1335,12 @@ bool handle_browser_event(ApplicationState &state, ftxui::Event event,
     move_browser_up(browser, 1);
     return true;
   }
-  if (event == ftxui::Event::l
-      || event == ftxui::Event::ArrowRight
-      || event == ftxui::Event::PageDown) {
-    move_browser_down(browser, 10);
+  if (event == ftxui::Event::PageDown) {
+    move_browser_down(browser, kPageMove);
     return true;
   }
-  if (event == ftxui::Event::h
-      || event == ftxui::Event::ArrowLeft
-      || event == ftxui::Event::PageUp) {
-    move_browser_up(browser, 10);
-    return true;
-  }
-  if (event == ftxui::Event::g) {
-    browser.selected = 0;
-    use_selection_scroll(browser.scroll, browser_selected_offset(browser));
-    return true;
-  }
-  if (event == ftxui::Event::G) {
-    if (!browser.visible_entries.empty()) {
-      browser.selected = browser.visible_entries.size() - 1;
-    }
-    use_selection_scroll(browser.scroll, browser_selected_offset(browser));
+  if (event == ftxui::Event::PageUp) {
+    move_browser_up(browser, kPageMove);
     return true;
   }
   if (event == ftxui::Event::r) {
@@ -1504,31 +1350,11 @@ bool handle_browser_event(ApplicationState &state, ftxui::Event event,
   return false;
 }
 
-ftxui::Element
-render_app(ApplicationState &state, int screen_height, int screen_width) {
-  const int viewport_height = content_viewport_height(screen_height);
-  const int viewport_width = content_viewport_width(screen_width);
+ftxui::Element render_app(ApplicationState &state) {
   if (state.showing_browser) {
-    return render_browser(state.browser, viewport_height);
+    return render_browser(state.browser);
   }
-  return render(state.viewer, state.browser_available, viewport_height,
-                viewport_width);
-}
-
-void advance_visible_scroll_animation(ApplicationState &state,
-                                      loupe::ScrollClock::time_point now) {
-  if (state.showing_browser) {
-    advance_scroll_animation(state.browser.scroll, now);
-    return;
-  }
-  advance_scroll_animation(state.viewer.scroll, now);
-}
-
-bool visible_scroll_animation_active(const ApplicationState &state) {
-  if (state.showing_browser) {
-    return scroll_animation_active(state.browser.scroll);
-  }
-  return scroll_animation_active(state.viewer.scroll);
+  return render(state.viewer, state.browser_available);
 }
 
 bool handle_app_event(ApplicationState &state, ftxui::Event event,
@@ -1584,20 +1410,17 @@ int main(int argc, char **argv) {
   }
 
   auto screen = ftxui::App::Fullscreen();
+  screen.TrackMouse(true);
   const ftxui::Closure quit = screen.ExitLoopClosure();
 
-  auto component = ftxui::Renderer([&] {
-    advance_visible_scroll_animation(state, loupe::ScrollClock::now());
-    auto frame = render_app(state, screen.dimy(), screen.dimx());
-    if (visible_scroll_animation_active(state)) {
-      screen.RequestAnimationFrame();
-    }
-    return frame;
-  });
+  auto component = ftxui::Renderer([&] { return render_app(state); });
   component |= ftxui::CatchEvent([&](ftxui::Event event) {
     return handle_app_event(state, std::move(event), quit);
   });
 
-  screen.Loop(component);
+  {
+    loupe::ScopedSynchronizedOutput synchronized_output(std::cout);
+    screen.Loop(component);
+  }
   return EXIT_SUCCESS;
 }

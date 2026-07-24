@@ -93,11 +93,16 @@ ctest --test-dir build --output-on-failure
 ```
 
 The executable is written below `build/bin/<configuration>/loupe`.
+Terminal frames use DEC synchronized output so supporting emulators can display
+each redraw atomically and avoid visible tearing.
 
 ## Keyboard shortcuts
 
-- `j` / `k`, arrows, Page Up / Page Down: navigate
-- `/`, then `n` / `N`: search and move between matches
+- `j` / `k`, Up / Down, Page Up / Page Down: navigate file and message lists
+- Mouse wheel / touchpad scroll: move the viewport by line without changing
+  the selected item
+- `/`: filter files or search the current log
+- `n` / `N`: move between matches in the current log
 - `r`: reload the current log with the same explicit format
 - `b`: return to the file browser
 - `q`: quit
