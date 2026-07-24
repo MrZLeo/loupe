@@ -273,11 +273,12 @@ jobs:
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          if gh release view --repo "$GH_REPO" "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload --repo "$GH_REPO" "$GITHUB_REF_NAME" dist/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* \
+            gh release create --repo "$GH_REPO" "$GITHUB_REF_NAME" dist/* \
               --verify-tag \
               --generate-notes \
               --title "Loupe ${GITHUB_REF_NAME}"
