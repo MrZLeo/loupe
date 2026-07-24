@@ -119,7 +119,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $binary = "build/bin/Release/loupe.exe"
+          $binary = (Resolve-Path "build/bin/Release/loupe.exe").Path
 
           & $binary --version
 
@@ -218,7 +218,8 @@ jobs:
                 exit 1
                 ;;
             esac
-          done < <(otool -L "$binary" | tail -n +2 | awk '{print $1}')
+          done < <(otool -L "$binary" |
+            awk '/^[[:space:]]/ {print $1}')
           "$binary" --version
 
           archive="loupe-${RELEASE_VERSION}-macos-universal.tar.gz"
