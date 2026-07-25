@@ -3,6 +3,10 @@
 #include "loupe/session_parser.hpp"
 #include "loupe/structured_text.hpp"
 
+#include "json_helpers.hpp"
+
+#include <simdjson.h>
+
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -198,6 +202,35 @@ std::string severity_name(DiagnosticSeverity severity) {
   return "warning";
 }
 
+std::string todo_list_checklist(const std::string &json) {
+  simdjson::dom::parser parser;
+  simdjson::padded_string padded{json};
+  simdjson::dom::element root;
+  if (parser.parse(padded).get(root)) {
+    return json;
+  }
+
+  simdjson::dom::array items;
+  if (root.get_array().get(items)) {
+    return json;
+  }
+
+  std::string checklist;
+  for (const simdjson::dom::element item : items) {
+    if (item.type() != simdjson::dom::element_type::OBJECT) {
+      return json;
+    }
+    const std::string text = detail::string_at(item, "/text").value_or("");
+    const bool completed = detail::bool_at(item, "/completed").value_or(false);
+    if (!checklist.empty()) {
+      checklist.push_back('\n');
+    }
+    checklist += completed ? "[x] " : "[ ] ";
+    checklist += text;
+  }
+  return checklist;
+}
+
 } // namespace
 
 std::vector<LogMessage>
@@ -362,6 +395,18 @@ make_display_messages(const SessionIR &session, const DisplayOptions &options) {
       if (const auto *metadata = std::get_if<MetadataEvent>(&event.payload)) {
         if (metadata->name == "display_annotation" && last_message) {
           messages[*last_message].annotations.push_back(metadata->value);
+          continue;
+        }
+        if (metadata->name == "codex_exec.todo_list") {
+          messages.push_back(LogMessage{
+              .role = "system",
+              .content = todo_list_checklist(metadata->value),
+              .annotations = {},
+              .timestamp = event_timestamp(event, record),
+              .raw_type = "todo_list",
+              .source_line = record.source_line,
+          });
+          last_message = messages.size() - 1;
           continue;
         }
         if (!options.show_metadata) {

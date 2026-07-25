@@ -42,6 +42,7 @@ set(test_sources
   src/codex_exec_parser_test.cpp
   src/codex_parser_test.cpp
   src/log_parser_test.cpp
+  src/message_projection_test.cpp
   src/line_frame_test.cpp
   src/markdown_text_test.cpp
   src/pi_parser_test.cpp
