@@ -125,12 +125,15 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                    std::exit(EXIT_SUCCESS);
                  }));
   parser.add(Argum::Option("--format", "-f")
-                 .help("log format: pi, codex, claudecode, or generic")
+                 .help("log format: pi, codex, codex-exec, claudecode, or "
+                       "generic")
                  .handler([&](const std::string_view &value) {
                    result.options.format = loupe::parse_log_format(value);
                    if (!result.options.format) {
-                     result.format_error =
-                         "unsupported log format: " + std::string{value};
+                     result.format_error = "unsupported log format: "
+                         + std::string{value}
+                         + " (expected pi, codex, codex-exec, claudecode, or "
+                           "generic)";
                    }
                  }));
 
@@ -160,7 +163,7 @@ CliParseResult parse_cli_args(int argc, char **argv) {
   }
   if (!result.options.format) {
     std::cerr << "error: --format is required "
-                 "(pi, codex, claudecode, or generic)\n";
+                 "(pi, codex, codex-exec, claudecode, or generic)\n";
     std::cerr << parser.formatUsage(program_name) << '\n';
     result.exit_code = EXIT_FAILURE;
     return result;

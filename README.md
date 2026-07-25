@@ -12,15 +12,22 @@ paths.
 | `--format` | Input |
 | --- | --- |
 | `pi` | Pi session JSONL, including parent-linked branches |
-| `codex` | Codex rollout JSONL |
+| `codex` | Codex session rollout JSONL |
+| `codex-exec` | `codex exec --json` event-stream JSONL |
 | `claudecode` | Claude Code transcript JSONL |
 | `generic` | Loupe's legacy generic JSON/JSONL parser |
 
 ```sh
 loupe --format pi ~/.pi/agent/sessions/.../session.jsonl
 loupe --format codex ~/.codex/sessions/2026/07/23/rollout-....jsonl
+codex exec --json "summarize this repository" > codex-exec.jsonl
+loupe --format codex-exec codex-exec.jsonl
 loupe --format claudecode ~/.claude/projects/.../session.jsonl
 ```
+
+`codex` and `codex-exec` are separate formats. The former reads the persisted
+session rollout, while the latter reads the machine-readable stdout event
+stream produced by `codex exec --json`.
 
 A directory can be opened instead of a file. The selected format is then
 applied to every file opened from the browser:
@@ -35,10 +42,16 @@ loupe --format codex ~/.codex/sessions
 native JSONL
     |
     +-- Pi parser
-    +-- Codex parser       -> SessionIR -> validation/branch selection
-    +-- Claude Code parser                    |
-    +-- Generic parser                        v
-                                      display projection -> TUI
+    +-- Codex session parser
+    +-- Codex Exec parser
+    +-- Claude Code parser
+    +-- Generic parser
+            |
+            v
+        SessionIR -> validation/branch selection
+                              |
+                              v
+                     display projection -> TUI
 ```
 
 `SessionIR` keeps provider-independent events for messages, reasoning, tool
@@ -68,6 +81,9 @@ The public parsing API is:
 auto parsed =
     loupe::parse_session_file(path, loupe::LogFormat::Codex);
 auto messages = loupe::make_display_messages(parsed.session);
+
+auto exec =
+    loupe::parse_session_file(exec_path, loupe::LogFormat::CodexExec);
 ```
 
 Format adapters only translate native data into the IR. Shared validation,
@@ -79,7 +95,7 @@ records and produce diagnostics. Fatal diagnostics prevent the TUI from
 showing a partially trusted transcript; non-fatal diagnostics remain visible
 in the status line. The `generic` adapter is an explicitly selected, lossy
 compatibility path for the old parser, so the raw-record guarantee applies to
-the `pi`, `codex`, and `claudecode` adapters.
+the `pi`, `codex`, `codex-exec`, and `claudecode` adapters.
 
 ## Build and test
 

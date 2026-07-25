@@ -127,6 +127,34 @@ std::string event_timestamp(const EventIR &event, const RecordIR &record) {
   return event.timestamp.empty() ? record.timestamp : event.timestamp;
 }
 
+bool execution_event_visible(const ExecutionEvent &execution) {
+  return (execution.subject == ExecutionSubject::Stream
+          && execution.phase == ExecutionPhase::Error)
+      || (execution.subject == ExecutionSubject::Turn
+          && execution.phase == ExecutionPhase::Failed)
+      || (execution.subject == ExecutionSubject::Item
+          && execution.phase == ExecutionPhase::Completed
+          && execution.native_type == "error");
+}
+
+std::string execution_event_message(const ExecutionEvent &execution) {
+  if (!execution.message.empty()) {
+    return execution.message;
+  }
+  if (!execution.status.empty()) {
+    return execution.status;
+  }
+  if (execution.subject == ExecutionSubject::Turn
+      && execution.phase == ExecutionPhase::Failed) {
+    return "Codex Exec turn failed";
+  }
+  if (execution.subject == ExecutionSubject::Item
+      && execution.native_type == "error") {
+    return "Codex Exec item error";
+  }
+  return "Codex Exec stream error";
+}
+
 bool record_messages_hidden(const RecordIR &record) {
   for (const auto &event : record.events) {
     const auto *metadata = std::get_if<MetadataEvent>(&event.payload);
@@ -348,6 +376,31 @@ make_display_messages(const SessionIR &session, const DisplayOptions &options) {
             .source_line = record.source_line,
         });
         last_message = messages.size() - 1;
+        continue;
+      }
+
+      if (const auto *execution = std::get_if<ExecutionEvent>(&event.payload)) {
+        if (!execution_event_visible(*execution)) {
+          continue;
+        }
+        std::string content = execution_event_message(*execution);
+        std::vector<std::string> annotations;
+        if (!execution->status.empty()
+            && execution->status != content) {
+          annotations.push_back("status=" + execution->status);
+        }
+        if (!execution->native_id.empty()) {
+          annotations.push_back("id=" + execution->native_id);
+        }
+        messages.push_back(LogMessage{
+            .role = "system",
+            .content = std::move(content),
+            .annotations = std::move(annotations),
+            .timestamp = event_timestamp(event, record),
+            .raw_type = execution->native_type.empty() ? record.native_type
+                                                       : execution->native_type,
+            .source_line = record.source_line,
+        });
         continue;
       }
 

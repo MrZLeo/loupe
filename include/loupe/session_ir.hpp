@@ -105,13 +105,41 @@ struct MetadataEvent {
   std::string value;
 };
 
+enum class ExecutionSubject {
+  Stream,
+  Thread,
+  Turn,
+  Item,
+};
+
+enum class ExecutionPhase {
+  Started,
+  Updated,
+  Completed,
+  Failed,
+  Error,
+  Interrupted,
+  Unknown,
+};
+
+struct ExecutionEvent {
+  ExecutionSubject subject{ExecutionSubject::Stream};
+  ExecutionPhase phase{ExecutionPhase::Unknown};
+  std::string correlation_id;
+  std::string native_id;
+  std::string native_type;
+  std::string status;
+  std::string message;
+  bool terminal{false};
+};
+
 struct UnknownEvent {
   std::string native_type;
 };
 
-using EventPayload =
-    std::variant<MessageEvent, ReasoningEvent, ToolCallEvent, ToolResultEvent,
-                 CompactionEvent, UsageEvent, MetadataEvent, UnknownEvent>;
+using EventPayload = std::variant<MessageEvent, ReasoningEvent, ToolCallEvent,
+                                  ToolResultEvent, CompactionEvent, UsageEvent,
+                                  MetadataEvent, UnknownEvent, ExecutionEvent>;
 
 struct EventIR {
   std::size_t fragment_index{0};
@@ -169,6 +197,9 @@ enum class DiagnosticCode {
   ParentCycle,
   EmptyCallId,
   InconsistentSessionId,
+  InvalidFieldType,
+  InvalidLifecycle,
+  IncompleteStream,
 };
 
 struct Diagnostic {

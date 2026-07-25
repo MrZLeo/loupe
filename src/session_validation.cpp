@@ -149,6 +149,7 @@ std::vector<std::size_t>
 select_conversation_records(const SessionIR &session,
                             std::optional<std::string_view> leaf_id) {
   if (session.format == LogFormat::Codex
+      || session.format == LogFormat::CodexExec
       || session.format == LogFormat::Generic) {
     std::vector<std::size_t> all(session.records.size());
     std::iota(all.begin(), all.end(), std::size_t{0});

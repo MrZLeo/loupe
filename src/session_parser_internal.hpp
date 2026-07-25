@@ -9,6 +9,7 @@ namespace loupe::detail {
 
 SessionParseResult parse_pi_session(std::string_view content);
 SessionParseResult parse_codex_rollout(std::string_view content);
+SessionParseResult parse_codex_exec_stream(std::string_view content);
 SessionParseResult parse_claudecode_transcript(std::string_view content);
 SessionParseResult parse_generic_session(std::string_view content);
 

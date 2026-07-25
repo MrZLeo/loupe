@@ -9,6 +9,9 @@ std::optional<LogFormat> parse_log_format(std::string_view value) {
   if (value == "codex") {
     return LogFormat::Codex;
   }
+  if (value == "codex-exec") {
+    return LogFormat::CodexExec;
+  }
   if (value == "claudecode" || value == "claude-code") {
     return LogFormat::ClaudeCode;
   }
@@ -24,6 +27,8 @@ std::string_view log_format_name(LogFormat format) {
     return "pi";
   case LogFormat::Codex:
     return "codex";
+  case LogFormat::CodexExec:
+    return "codex-exec";
   case LogFormat::ClaudeCode:
     return "claudecode";
   case LogFormat::Generic:

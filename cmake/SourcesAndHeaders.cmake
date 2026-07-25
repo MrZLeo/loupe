@@ -1,5 +1,6 @@
 set(sources
   src/claudecode_parser.cpp
+  src/codex_exec_parser.cpp
   src/codex_parser.cpp
   src/jsonl_reader.cpp
   src/log_format.cpp
@@ -38,6 +39,7 @@ set(headers
 )
 
 set(test_sources
+  src/codex_exec_parser_test.cpp
   src/codex_parser_test.cpp
   src/log_parser_test.cpp
   src/line_frame_test.cpp

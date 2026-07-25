@@ -11,6 +11,7 @@ enum class LogFormat {
   Codex,
   ClaudeCode,
   Generic,
+  CodexExec,
 };
 
 std::optional<LogFormat> parse_log_format(std::string_view value);

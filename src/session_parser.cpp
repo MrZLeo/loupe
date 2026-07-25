@@ -156,6 +156,9 @@ parse_session_content(std::string_view content, LogFormat format) {
   case LogFormat::Codex:
     result = detail::parse_codex_rollout(content);
     break;
+  case LogFormat::CodexExec:
+    result = detail::parse_codex_exec_stream(content);
+    break;
   case LogFormat::ClaudeCode:
     result = detail::parse_claudecode_transcript(content);
     break;
