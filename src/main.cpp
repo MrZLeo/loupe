@@ -10,6 +10,8 @@
 #include <ftxui/component/mouse.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/color.hpp>
+#include <ftxui/screen/string.hpp>
+#include <ftxui/screen/terminal.hpp>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -43,6 +45,18 @@ struct CliParseResult {
   int exit_code{EXIT_SUCCESS};
 };
 
+struct StyledSegment {
+  std::string text;
+  ftxui::Color color{ftxui::Color::Default};
+  bool bold{false};
+  bool italic{false};
+  bool dim{false};
+  bool code{false};
+  bool link{false};
+};
+
+using DisplayLine = std::vector<StyledSegment>;
+
 struct AppState {
   std::filesystem::path path;
   loupe::LogFormat format{loupe::LogFormat::Generic};
@@ -57,6 +71,12 @@ struct AppState {
   std::vector<std::size_t> search_matches;
   std::size_t search_origin_selected{0};
   bool show_diagnostics{false};
+  // Cached display lines, rebuilt when the terminal width or the messages
+  // change. message_rows[i] is the [first, last) display-line range of
+  // message i.
+  std::vector<DisplayLine> display_lines;
+  std::vector<std::pair<std::size_t, std::size_t>> message_rows;
+  int lines_width{-1};
 };
 
 struct BrowserEntry {
@@ -475,10 +495,6 @@ load_viewer_state(const std::filesystem::path &path, loupe::LogFormat format) {
   return loaded;
 }
 
-bool is_space(char value) {
-  return std::isspace(static_cast<unsigned char>(value)) != 0;
-}
-
 // ftxui's text() drops control characters, so raw tabs vanish from command
 // output (`nl -ba` separators, indented code). Expand them against standard
 // 8-column stops. Column counting tracks code points, not bytes, so
@@ -511,270 +527,312 @@ std::string expand_tabs(std::string_view text) {
   return expanded;
 }
 
-bool is_plain_text_span(const loupe::MarkdownSpan &span) {
-  return !span.bold && !span.italic && !span.code && span.link_url.empty();
+// ---------------------------------------------------------------------------
+// Display line model
+//
+// Message bodies are wrapped into styled display lines once per terminal
+// width and cached. Each frame instantiates ftxui elements only for the rows
+// intersecting the viewport, so the per-frame cost tracks the viewport size
+// instead of the document size. Laying out the whole document with nested
+// flexboxes on every frame was the scrolling bottleneck.
+
+struct WrapToken {
+  std::string text;
+  StyledSegment style;
+  bool space{false};
+  std::size_t cells{0};
+};
+
+std::vector<WrapToken>
+tokenize_for_wrap(const std::vector<StyledSegment> &segments) {
+  std::vector<WrapToken> tokens;
+  for (const StyledSegment &segment : segments) {
+    std::size_t index = 0;
+    while (index < segment.text.size()) {
+      const std::size_t start = index;
+      const bool space = segment.text[index] == ' ';
+      while (index < segment.text.size()
+             && (segment.text[index] == ' ') == space) {
+        ++index;
+      }
+      WrapToken token;
+      token.text = segment.text.substr(start, index - start);
+      token.style = segment;
+      token.style.text.clear();
+      token.space = space;
+      token.cells =
+          static_cast<std::size_t>(ftxui::string_width(token.text));
+      tokens.push_back(std::move(token));
+    }
+  }
+  return tokens;
 }
 
-bool is_plain_text(const std::vector<loupe::MarkdownSpan> &spans) {
-  return spans.size() == 1 && is_plain_text_span(spans.front());
+// Greedily wrap styled text into display lines of at most `width` cells.
+// `first_prefix` prefixes the first line; wrapped lines are indented by
+// `continuation_cells` spaces, producing the hanging-indent look lists,
+// quotes, and code blocks had under flexbox. Words wider than `width`
+// overflow their line and are clipped at the screen edge, also matching the
+// old flexbox behavior.
+void append_wrapped_line(std::vector<DisplayLine> &out,
+                         const std::vector<StyledSegment> &segments,
+                         StyledSegment first_prefix,
+                         std::size_t continuation_cells, std::size_t width) {
+  DisplayLine line;
+  std::size_t cells = 0;
+  if (!first_prefix.text.empty()) {
+    cells = static_cast<std::size_t>(ftxui::string_width(first_prefix.text));
+    line.push_back(std::move(first_prefix));
+  }
+
+  // Leading spaces of the logical line are significant (indented code);
+  // only spaces landing exactly on a wrap point are dropped.
+  bool fresh_line = false;
+  for (const WrapToken &token : tokenize_for_wrap(segments)) {
+    if (token.space && fresh_line) {
+      continue; // Spaces landing on a wrap point are dropped.
+    }
+    if (cells > 0 && cells + token.cells > width) {
+      out.push_back(std::move(line));
+      line = DisplayLine{};
+      if (continuation_cells > 0) {
+        line.push_back(StyledSegment{
+            .text = std::string(continuation_cells, ' '),
+        });
+      }
+      cells = continuation_cells;
+      fresh_line = true;
+      if (token.space) {
+        continue;
+      }
+    }
+    StyledSegment piece = token.style;
+    piece.text = token.text;
+    line.push_back(std::move(piece));
+    cells += token.cells;
+    fresh_line = false;
+  }
+  out.push_back(std::move(line));
 }
 
-ftxui::Element
-styled_text(std::string_view value, const loupe::MarkdownSpan &span,
-            ftxui::Color base_color, HighlightKind highlight) {
+// Truncate a single display line to `width` cells at glyph boundaries. Used
+// for header metadata, which must stay on one line.
+void truncate_display_line(DisplayLine &line, std::size_t width) {
+  std::size_t cells = 0;
+  std::size_t kept_segments = 0;
+  for (; kept_segments < line.size(); ++kept_segments) {
+    StyledSegment &segment = line[kept_segments];
+    const std::size_t segment_cells =
+        static_cast<std::size_t>(ftxui::string_width(segment.text));
+    if (cells + segment_cells <= width) {
+      cells += segment_cells;
+      continue;
+    }
+    const std::size_t remaining = width - cells;
+    std::string kept_text;
+    std::size_t kept_cells = 0;
+    for (const std::string &glyph : ftxui::Utf8ToGlyphs(segment.text)) {
+      const std::size_t glyph_cells =
+          static_cast<std::size_t>(ftxui::string_width(glyph));
+      if (kept_cells + glyph_cells > remaining) {
+        break;
+      }
+      kept_text += glyph;
+      kept_cells += glyph_cells;
+    }
+    segment.text = std::move(kept_text);
+    ++kept_segments;
+    break;
+  }
+  line.resize(kept_segments);
+}
+
+StyledSegment style_from_markdown(const loupe::MarkdownSpan &span,
+                                  ftxui::Color base_color) {
+  return StyledSegment{
+      .text = span.text,
+      .color = base_color,
+      .bold = span.bold,
+      .italic = span.italic,
+      .dim = false,
+      .code = span.code,
+      .link = !span.link_url.empty(),
+  };
+}
+
+std::vector<StyledSegment>
+segments_from_markdown(const std::vector<loupe::MarkdownSpan> &spans,
+                       ftxui::Color base_color) {
+  std::vector<StyledSegment> segments;
+  segments.reserve(spans.size());
+  for (const loupe::MarkdownSpan &span : spans) {
+    segments.push_back(style_from_markdown(span, base_color));
+  }
+  return segments;
+}
+
+void append_markdown_lines(std::string_view content, std::size_t width,
+                           std::vector<DisplayLine> &out) {
+  using ftxui::Color;
+  for (const loupe::MarkdownBlock &block : loupe::parse_markdown_text(content)) {
+    switch (block.kind) {
+    case loupe::MarkdownBlockKind::Blank:
+      out.emplace_back();
+      break;
+
+    case loupe::MarkdownBlockKind::CodeBlock: {
+      std::size_t start = 0;
+      while (start <= block.code.size()) {
+        const std::size_t end = block.code.find('\n', start);
+        const std::string_view code_line =
+            end == std::string_view::npos
+                ? std::string_view{block.code}.substr(start)
+                : std::string_view{block.code}.substr(start, end - start);
+        append_wrapped_line(
+            out,
+            {StyledSegment{.text = expand_tabs(code_line),
+                           .color = Color::CyanLight}},
+            StyledSegment{.text = "  ", .color = Color::CyanLight}, 2, width);
+        if (end == std::string_view::npos) {
+          break;
+        }
+        start = end + 1;
+      }
+      break;
+    }
+
+    case loupe::MarkdownBlockKind::Heading: {
+      const Color heading_color =
+          block.level <= 2 ? Color::White : Color::GrayLight;
+      std::vector<StyledSegment> segments =
+          segments_from_markdown(block.spans, heading_color);
+      for (StyledSegment &segment : segments) {
+        segment.bold = true;
+      }
+      append_wrapped_line(out, segments, StyledSegment{}, 0, width);
+      break;
+    }
+
+    case loupe::MarkdownBlockKind::ListItem: {
+      const std::size_t indent =
+          static_cast<std::size_t>(std::min(block.level, 6)) * 2;
+      StyledSegment prefix{
+          .text = std::string(indent, ' ')
+                + (block.marker.empty() ? "-" : block.marker) + " ",
+          .color = Color::GrayDark,
+      };
+      const std::size_t prefix_cells =
+          static_cast<std::size_t>(ftxui::string_width(prefix.text));
+      append_wrapped_line(
+          out, segments_from_markdown(block.spans, Color::GrayLight),
+          std::move(prefix), prefix_cells, width);
+      break;
+    }
+
+    case loupe::MarkdownBlockKind::Quote: {
+      std::vector<StyledSegment> segments =
+          segments_from_markdown(block.spans, Color::GrayLight);
+      for (StyledSegment &segment : segments) {
+        segment.dim = true;
+      }
+      append_wrapped_line(out, segments,
+                          StyledSegment{.text = "> ", .color = Color::GrayDark},
+                          2, width);
+      break;
+    }
+
+    case loupe::MarkdownBlockKind::Paragraph:
+      append_wrapped_line(out,
+                          segments_from_markdown(block.spans, Color::GrayLight),
+                          StyledSegment{}, 0, width);
+      break;
+    }
+  }
+}
+
+void append_verbatim_lines(std::string_view content, std::size_t width,
+                           std::vector<DisplayLine> &out) {
+  std::size_t start = 0;
+  while (start <= content.size()) {
+    const std::size_t end = content.find('\n', start);
+    const std::string_view line = end == std::string_view::npos
+                                    ? content.substr(start)
+                                    : content.substr(start, end - start);
+    append_wrapped_line(out,
+                        {StyledSegment{.text = expand_tabs(line),
+                                       .color = ftxui::Color::GrayLight}},
+                        StyledSegment{}, 0, width);
+    if (end == std::string_view::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+}
+
+ftxui::Element styled_piece(std::string_view value,
+                            const StyledSegment &segment,
+                            HighlightKind highlight) {
   using namespace ftxui;
 
-  Element element = text(value);
-
+  Element element = text(std::string{value});
   if (highlight == HighlightKind::Current) {
     element = element | color(Color::Black) | bgcolor(Color::MagentaLight);
   } else if (highlight == HighlightKind::Match) {
     element = element | color(Color::Black) | bgcolor(Color::YellowLight);
-  } else if (span.code) {
+  } else if (segment.code) {
     element = element | color(Color::Black) | bgcolor(Color::CyanLight);
-  } else if (!span.link_url.empty()) {
+  } else if (segment.link) {
     element = element | color(Color::CyanLight) | underlined;
   } else {
-    element = element | color(base_color);
+    element = element | color(segment.color);
   }
 
-  if (span.bold) {
+  if (segment.bold) {
     element = element | bold;
   }
-  if (span.italic) {
+  if (segment.italic) {
     element = element | italic;
   }
-
+  if (segment.dim) {
+    element = element | dim;
+  }
   return element;
 }
 
-void append_tokenized_text(ftxui::Elements &out, std::string_view value,
-                           const loupe::MarkdownSpan &span,
-                           ftxui::Color base_color, HighlightKind highlight) {
-  if (value.empty()) {
-    return;
-  }
+ftxui::Element render_display_line(const DisplayLine &line,
+                                   std::string_view search_query,
+                                   bool current_search_match) {
+  using namespace ftxui;
 
-  if (span.code || highlight != HighlightKind::None) {
-    out.push_back(styled_text(value, span, base_color, highlight));
-    return;
-  }
-
-  std::size_t index = 0;
-  while (index < value.size()) {
-    const std::size_t start = index;
-    if (is_space(value[index])) {
-      while (index < value.size() && is_space(value[index])) {
-        ++index;
-      }
-    } else {
-      while (index < value.size() && !is_space(value[index])) {
-        ++index;
-      }
-      while (index < value.size() && is_space(value[index])) {
-        ++index;
-      }
+  Elements pieces;
+  for (const StyledSegment &segment : line) {
+    if (segment.text.empty()) {
+      continue;
     }
-
-    out.push_back(styled_text(value.substr(start, index - start), span,
-                              base_color, highlight));
-  }
-}
-
-void
-append_styled_tokens(ftxui::Elements &out, const loupe::MarkdownSpan &span,
-                     ftxui::Color base_color, std::string_view search_query,
-                     bool current_search_match) {
-  if (span.text.empty()) {
-    return;
-  }
-
-  const auto ranges = loupe::find_text_matches(span.text, search_query);
-  if (ranges.empty()) {
-    append_tokenized_text(out, span.text, span, base_color,
-                          HighlightKind::None);
-    return;
-  }
-
-  std::size_t cursor = 0;
-  for (const auto &range : ranges) {
-    append_tokenized_text(
-        out, std::string_view{span.text}.substr(cursor, range.offset - cursor),
-        span, base_color, HighlightKind::None);
-
-    append_tokenized_text(
-        out, std::string_view{span.text}.substr(range.offset, range.length),
-        span, base_color,
-        current_search_match ? HighlightKind::Current : HighlightKind::Match);
-
-    cursor = range.offset + range.length;
-  }
-
-  append_tokenized_text(out, std::string_view{span.text}.substr(cursor), span,
-                        base_color, HighlightKind::None);
-}
-
-ftxui::Element
-render_inline_spans(const std::vector<loupe::MarkdownSpan> &spans,
-                    ftxui::Color base_color, std::string_view search_query,
-                    bool current_search_match) {
-  using namespace ftxui;
-
-  if (spans.empty()) {
-    return text("");
-  }
-
-  if (search_query.empty() && is_plain_text(spans)) {
-    return paragraph(spans.front().text) | color(base_color);
-  }
-
-  Elements tokens;
-  for (const auto &span : spans) {
-    append_styled_tokens(tokens, span, base_color, search_query,
-                         current_search_match);
-  }
-
-  if (tokens.empty()) {
-    return text("");
-  }
-  // No xflex here: callers that need horizontal expansion (list items,
-  // quotes) apply it themselves. In tight contexts like message headers an
-  // xflex element would stretch and push neighboring metadata aside.
-  return hflow(std::move(tokens));
-}
-
-ftxui::Element
-render_searchable_text(std::string_view value, ftxui::Color base_color,
-                       std::string_view search_query,
-                       bool current_search_match) {
-  // Expand tabs at line granularity so tab stops align to the line start.
-  return render_inline_spans(
-      {loupe::MarkdownSpan{.text = expand_tabs(value), .link_url = {}}},
-      base_color, search_query, current_search_match);
-}
-
-ftxui::Element
-render_searchable_lines(std::string_view value, ftxui::Color base_color,
-                        std::string_view search_query,
-                        bool current_search_match) {
-  using namespace ftxui;
-
-  Elements rows;
-  std::size_t start = 0;
-  while (start <= value.size()) {
-    const std::size_t end = value.find('\n', start);
-    const std::string_view line = end == std::string_view::npos
-                                    ? value.substr(start)
-                                    : value.substr(start, end - start);
-    rows.push_back(render_searchable_text(line, base_color, search_query,
-                                          current_search_match));
-    if (end == std::string_view::npos) {
-      break;
+    const auto ranges = loupe::find_text_matches(segment.text, search_query);
+    std::size_t cursor = 0;
+    for (const auto &range : ranges) {
+      if (range.offset > cursor) {
+        pieces.push_back(styled_piece(segment.text.substr(cursor, range.offset - cursor), segment, HighlightKind::None));
+      }
+      pieces.push_back(styled_piece(segment.text.substr(range.offset, range.length), segment,
+                                    current_search_match ? HighlightKind::Current
+                                                         : HighlightKind::Match));
+      cursor = range.offset + range.length;
     }
-    start = end + 1;
+    pieces.push_back(styled_piece(segment.text.substr(cursor), segment,
+                                  HighlightKind::None));
   }
 
-  if (rows.empty()) {
+  if (pieces.empty()) {
     return text("");
   }
-  return vbox(std::move(rows)) | xflex;
+  return hbox(std::move(pieces));
 }
 
-ftxui::Element
-render_code_block(std::string_view code, std::string_view search_query,
-                  bool current_search_match) {
-  using namespace ftxui;
-
-  Elements rows;
-  std::size_t start = 0;
-  while (start <= code.size()) {
-    const std::size_t end = code.find('\n', start);
-    const std::string_view line = end == std::string_view::npos
-                                    ? code.substr(start)
-                                    : code.substr(start, end - start);
-    rows.push_back(hbox({
-        text("  ") | color(Color::CyanLight),
-        render_searchable_text(line, Color::CyanLight, search_query,
-                               current_search_match),
-    }));
-    if (end == std::string_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-
-  if (rows.empty()) {
-    rows.push_back(text("  ") | color(Color::CyanLight));
-  }
-
-  return vbox(std::move(rows));
-}
-
-ftxui::Element render_markdown_block(const loupe::MarkdownBlock &block,
-                                     std::string_view search_query,
-                                     bool current_search_match) {
-  using namespace ftxui;
-
-  switch (block.kind) {
-  case loupe::MarkdownBlockKind::Blank:
-    return text("");
-
-  case loupe::MarkdownBlockKind::CodeBlock:
-    return render_code_block(block.code, search_query, current_search_match);
-
-  case loupe::MarkdownBlockKind::Heading: {
-    const Color heading_color =
-        block.level <= 2 ? Color::White : Color::GrayLight;
-    return render_inline_spans(block.spans, heading_color, search_query,
-                               current_search_match)
-         | bold;
-  }
-
-  case loupe::MarkdownBlockKind::ListItem: {
-    const int indent = std::min(block.level, 6) * 2;
-    std::string marker(static_cast<std::size_t>(indent), ' ');
-    marker += block.marker.empty() ? "-" : block.marker;
-    marker += " ";
-    return hbox({
-        text(marker) | color(Color::GrayDark),
-        render_inline_spans(block.spans, Color::GrayLight, search_query,
-                            current_search_match)
-            | xflex,
-    });
-  }
-
-  case loupe::MarkdownBlockKind::Quote:
-    return hbox({
-        text("> ") | color(Color::GrayDark),
-        render_inline_spans(block.spans, Color::GrayLight, search_query,
-                            current_search_match)
-            | dim
-            | xflex,
-    });
-
-  case loupe::MarkdownBlockKind::Paragraph:
-    return render_inline_spans(block.spans, Color::GrayLight, search_query,
-                               current_search_match);
-  }
-
-  return text("");
-}
-
-ftxui::Element
-render_markdown_text(std::string_view content, std::string_view search_query,
-                     bool current_search_match) {
-  using namespace ftxui;
-
-  Elements rows;
-  for (const auto &block : loupe::parse_markdown_text(content)) {
-    rows.push_back(
-        render_markdown_block(block, search_query, current_search_match));
-  }
-
-  if (rows.empty()) {
-    return text("");
-  }
-  return vbox(std::move(rows)) | xflex;
+ftxui::Element row_spacer(std::size_t rows) {
+  return ftxui::text("")
+       | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, static_cast<int>(rows));
 }
 
 void clamp_selection(AppState &state) {
@@ -934,6 +992,7 @@ void reload(AppState &state) {
   if (state.parsed.errors.empty()) {
     state.show_diagnostics = false;
   }
+  state.lines_width = -1; // Force a display-line rebuild.
   clamp_selection(state);
   if (!state.search_query.empty()) {
     jump_to_search_match(state, loupe::SearchDirection::Forward, true);
@@ -988,34 +1047,37 @@ bool handle_diagnostics_event(AppState &state, const ftxui::Event &event) {
   return true;
 }
 
-ftxui::Element
-render_message(const loupe::LogMessage &message, bool selected,
-               std::string_view search_query, bool current_search_match) {
-  using namespace ftxui;
+// Expand one message into display lines: a single-line header, the wrapped
+// body, wrapped annotations, and a trailing blank separator line.
+void append_message_display_lines(const loupe::LogMessage &message,
+                                  std::size_t width,
+                                  std::vector<DisplayLine> &out) {
+  using ftxui::Color;
 
-  const Color accent = role_color(message.role);
-  Elements metadata{
-      render_searchable_text(message.role, accent, search_query,
-                             current_search_match)
-          | bold,
+  DisplayLine header{
+      StyledSegment{
+          .text = message.role,
+          .color = role_color(message.role),
+          .bold = true,
+      },
   };
-
   if (!message.timestamp.empty()) {
-    metadata.push_back(render_searchable_text("  " + message.timestamp,
-                                              Color::GrayLight, search_query,
-                                              current_search_match)
-                       | dim);
+    header.push_back(StyledSegment{.text = "  " + message.timestamp,
+                                   .color = Color::GrayLight,
+                                   .dim = true});
   }
   if (message.source_line > 0) {
-    metadata.push_back(text("  line " + std::to_string(message.source_line))
-                       | dim);
+    header.push_back(StyledSegment{
+        .text = "  line " + std::to_string(message.source_line),
+        .dim = true});
   }
   if (!message.raw_type.empty() && message.raw_type != message.role) {
-    metadata.push_back(render_searchable_text("  " + message.raw_type,
-                                              Color::GrayLight, search_query,
-                                              current_search_match)
-                       | dim);
+    header.push_back(StyledSegment{.text = "  " + message.raw_type,
+                                   .color = Color::GrayLight,
+                                   .dim = true});
   }
+  truncate_display_line(header, width);
+  out.push_back(std::move(header));
 
   // Tool results and unknown payloads are raw output, not prose. Render
   // them verbatim; Markdown would eat comment markers (`/* */`), turn ` * `
@@ -1029,42 +1091,70 @@ render_message(const loupe::LogMessage &message, bool selected,
       clipped_content(verbatim_body
                           ? message.content
                           : loupe::format_structured_text(message.content));
-  Element body = text("(empty)") | dim;
-  if (!message.content.empty()) {
-    body = verbatim_body
-             ? render_searchable_lines(clipped, Color::GrayLight, search_query,
-                                       current_search_match)
-             : render_markdown_text(clipped, search_query,
-                                    current_search_match);
+  if (message.content.empty()) {
+    out.push_back({StyledSegment{.text = "(empty)", .dim = true}});
+  } else if (verbatim_body) {
+    append_verbatim_lines(clipped, width, out);
+  } else {
+    append_markdown_lines(clipped, width, out);
   }
 
-  Elements body_rows{body};
-  for (const auto &annotation : message.annotations) {
-    body_rows.push_back(render_searchable_lines(annotation, Color::YellowLight,
-                                                search_query,
-                                                current_search_match)
-                        | dim);
+  for (const std::string &annotation : message.annotations) {
+    std::size_t start = 0;
+    while (start <= annotation.size()) {
+      const std::size_t end = annotation.find('\n', start);
+      const std::string_view line =
+          end == std::string_view::npos
+              ? std::string_view{annotation}.substr(start)
+              : std::string_view{annotation}.substr(start, end - start);
+      append_wrapped_line(out,
+                          {StyledSegment{.text = expand_tabs(line),
+                                         .color = Color::YellowLight,
+                                         .dim = true}},
+                          StyledSegment{}, 0, width);
+      if (end == std::string_view::npos) {
+        break;
+      }
+      start = end + 1;
+    }
   }
 
-  Element block = vbox({
-                      hbox(std::move(metadata)),
-                      vbox(std::move(body_rows)),
-                  })
-                | xflex;
+  out.emplace_back(); // Blank separator between messages.
+}
 
-  if (selected) {
-    return hbox({
-               text("▌") | color(accent),
-               text(" "),
-               block,
-           })
-         | focus;
+// Rebuild the cached display lines when the terminal width changed or the
+// messages were reloaded.
+void ensure_display_lines(AppState &state) {
+  const int terminal_width = ftxui::Terminal::Size().dimx;
+  if (terminal_width == state.lines_width && !state.display_lines.empty()) {
+    return;
   }
+  state.lines_width = terminal_width;
+  state.display_lines.clear();
+  state.message_rows.clear();
+  const std::size_t wrap_width =
+      static_cast<std::size_t>(std::max(16, terminal_width - 2));
+  for (const loupe::LogMessage &message : state.parsed.messages) {
+    const std::size_t first_row = state.display_lines.size();
+    append_message_display_lines(message, wrap_width, state.display_lines);
+    state.message_rows.emplace_back(first_row, state.display_lines.size());
+  }
+}
 
-  return hbox({
-      text("  "),
-      block,
-  });
+std::size_t
+message_row_owner(const std::vector<std::pair<std::size_t, std::size_t>> &rows,
+                  std::size_t row) {
+  std::size_t low = 0;
+  std::size_t high = rows.size();
+  while (low + 1 < high) {
+    const std::size_t mid = low + (high - low) / 2;
+    if (rows[mid].first <= row) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
 }
 
 ftxui::Element render_errors(const std::vector<std::string> &errors) {
@@ -1212,18 +1302,96 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
   } else if (state.parsed.messages.empty()) {
     rows.push_back(render_errors(state.parsed.errors));
   } else {
-    std::size_t index = 0;
-    for (const auto &message : state.parsed.messages) {
-      const bool selected_message = index == state.selected;
+    ensure_display_lines(state);
+
+    // Only instantiate elements for the rows intersecting the viewport
+    // (plus a small overscan). Off-screen rows become fixed-height spacers,
+    // which keeps the scroll geometry identical to a fully expanded list.
+    //
+    // When the scroller follows the selection, resolve the target top row
+    // here with the same geometry LineFrame applies during layout. The
+    // window must cover the rows LineFrame will show; emitting it from a
+    // stale top_row would let the scroller move into spacer territory,
+    // rendering blank rows.
+    constexpr std::size_t kOverscan = 2;
+    const std::size_t total_rows = state.display_lines.size();
+    const int viewport_rows =
+        state.scroll.viewport_rows > 0 ? state.scroll.viewport_rows : 60;
+    if (state.scroll.follow_focus
+        && state.selected < state.message_rows.size()) {
+      const auto selected_rows = state.message_rows[state.selected];
+      const int target = loupe::centered_top_row(
+          static_cast<int>(selected_rows.first),
+          static_cast<int>(selected_rows.second) - 1, viewport_rows);
+      state.scroll.top_row = std::clamp(
+          target, 0,
+          loupe::max_top_row_for(static_cast<int>(total_rows),
+                                 viewport_rows));
+    }
+    const std::size_t top = static_cast<std::size_t>(
+        std::clamp(state.scroll.top_row, 0, static_cast<int>(total_rows)));
+    const std::size_t lo = top > kOverscan ? top - kOverscan : 0;
+    const std::size_t hi =
+        std::min(total_rows,
+                 top + static_cast<std::size_t>(viewport_rows) + kOverscan);
+
+    if (lo > 0) {
+      rows.push_back(row_spacer(lo));
+    }
+    // Rows of one message are emitted together; the selected message's rows
+    // are wrapped and focused as a unit so scroll following centers the
+    // whole message, not just its first line. Only the first row carries
+    // the selection bar.
+    Elements message_elements;
+    std::size_t current_message = lo < hi
+                                      ? message_row_owner(state.message_rows, lo)
+                                      : 0;
+    const auto flush_message = [&]() {
+      if (message_elements.empty()) {
+        return;
+      }
+      Element block = message_elements.size() == 1
+                          ? std::move(message_elements.front())
+                          : vbox(std::move(message_elements));
+      if (current_message == state.selected) {
+        block = std::move(block) | focus;
+      }
+      rows.push_back(std::move(block));
+      message_elements.clear();
+    };
+    for (std::size_t row = lo; row < hi; ++row) {
+      const std::size_t message_index =
+          message_row_owner(state.message_rows, row);
+      if (message_index != current_message) {
+        flush_message();
+        current_message = message_index;
+      }
+      const loupe::LogMessage &message =
+          state.parsed.messages[message_index];
+      const bool selected_message = message_index == state.selected;
       const bool current_search_match =
           selected_message
           && std::binary_search(state.search_matches.begin(),
-                                state.search_matches.end(), index);
-      rows.push_back(render_message(message, selected_message,
-                                    visible_search_query,
-                                    current_search_match));
-      rows.push_back(separatorEmpty());
-      ++index;
+                                state.search_matches.end(), message_index);
+      Element line_element =
+          render_display_line(state.display_lines[row], visible_search_query,
+                              current_search_match);
+      if (selected_message && row == state.message_rows[message_index].first) {
+        message_elements.push_back(hbox({
+            text("▌") | color(role_color(message.role)),
+            text(" "),
+            std::move(line_element),
+        }));
+      } else {
+        message_elements.push_back(hbox({
+            text("  "),
+            std::move(line_element),
+        }));
+      }
+    }
+    flush_message();
+    if (hi < total_rows) {
+      rows.push_back(row_spacer(total_rows - hi));
     }
   }
 

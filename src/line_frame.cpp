@@ -29,15 +29,15 @@ public:
 
     pending_box_ = box;
     const int external_height = box.y_max - box.y_min;
+    scroll_.viewport_rows = external_height + 1;
     pending_internal_height_ = std::max(requirement_.min_y, external_height);
     pending_max_top_row_ =
-        std::max(0, pending_internal_height_ - external_height - 1);
+        max_top_row_for(pending_internal_height_, scroll_.viewport_rows);
     pending_focused_top_row_ = 0;
     if (requirement_.focused.enabled) {
       const auto &focused = requirement_.focused.box;
-      pending_focused_top_row_ = focused.y_min
-                               - external_height / 2
-                               + (focused.y_max - focused.y_min) / 2;
+      pending_focused_top_row_ = centered_top_row(
+          focused.y_min, focused.y_max, scroll_.viewport_rows);
     }
     layout_pending_ = true;
 
