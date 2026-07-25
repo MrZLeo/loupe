@@ -56,6 +56,7 @@ struct AppState {
   std::string search_query;
   std::vector<std::size_t> search_matches;
   std::size_t search_origin_selected{0};
+  bool show_diagnostics{false};
 };
 
 struct BrowserEntry {
@@ -478,6 +479,38 @@ bool is_space(char value) {
   return std::isspace(static_cast<unsigned char>(value)) != 0;
 }
 
+// ftxui's text() drops control characters, so raw tabs vanish from command
+// output (`nl -ba` separators, indented code). Expand them against standard
+// 8-column stops. Column counting tracks code points, not bytes, so
+// multi-byte UTF-8 does not skew the stops.
+constexpr std::size_t kTabWidth = 8;
+
+std::string expand_tabs(std::string_view text) {
+  if (text.find('\t') == std::string_view::npos) {
+    return std::string{text};
+  }
+
+  std::string expanded;
+  expanded.reserve(text.size());
+  std::size_t column = 0;
+  for (const char raw : text) {
+    const auto byte = static_cast<unsigned char>(raw);
+    if (raw == '\t') {
+      const std::size_t spaces = kTabWidth - column % kTabWidth;
+      expanded.append(spaces, ' ');
+      column += spaces;
+      continue;
+    }
+    expanded.push_back(raw);
+    if (raw == '\n') {
+      column = 0;
+    } else if ((byte & 0xC0U) != 0x80U) {
+      ++column;
+    }
+  }
+  return expanded;
+}
+
 bool is_plain_text_span(const loupe::MarkdownSpan &span) {
   return !span.bold && !span.italic && !span.code && span.link_url.empty();
 }
@@ -604,15 +637,19 @@ render_inline_spans(const std::vector<loupe::MarkdownSpan> &spans,
   if (tokens.empty()) {
     return text("");
   }
-  return hflow(std::move(tokens)) | xflex;
+  // No xflex here: callers that need horizontal expansion (list items,
+  // quotes) apply it themselves. In tight contexts like message headers an
+  // xflex element would stretch and push neighboring metadata aside.
+  return hflow(std::move(tokens));
 }
 
 ftxui::Element
 render_searchable_text(std::string_view value, ftxui::Color base_color,
                        std::string_view search_query,
                        bool current_search_match) {
+  // Expand tabs at line granularity so tab stops align to the line start.
   return render_inline_spans(
-      {loupe::MarkdownSpan{.text = std::string{value}, .link_url = {}}},
+      {loupe::MarkdownSpan{.text = expand_tabs(value), .link_url = {}}},
       base_color, search_query, current_search_match);
 }
 
@@ -894,12 +931,61 @@ void reload(AppState &state) {
   AppState loaded = load_viewer_state(state.path, state.format);
   state.session = std::move(loaded.session);
   state.parsed = std::move(loaded.parsed);
+  if (state.parsed.errors.empty()) {
+    state.show_diagnostics = false;
+  }
   clamp_selection(state);
   if (!state.search_query.empty()) {
     jump_to_search_match(state, loupe::SearchDirection::Forward, true);
   }
   state.status =
       "reloaded " + std::to_string(state.parsed.messages.size()) + " messages";
+}
+
+void open_diagnostics(AppState &state) {
+  if (state.parsed.errors.empty()) {
+    state.status = "no diagnostics";
+    return;
+  }
+  state.show_diagnostics = true;
+  state.status.clear();
+  state.scroll.follow_focus = false;
+  state.scroll.top_row = 0;
+}
+
+void close_diagnostics(AppState &state) {
+  state.show_diagnostics = false;
+  loupe::follow_selection(state.scroll);
+}
+
+bool handle_diagnostics_event(AppState &state, const ftxui::Event &event) {
+  if (event == ftxui::Event::e || event == ftxui::Event::Escape
+      || event == ftxui::Event::q) {
+    close_diagnostics(state);
+    return true;
+  }
+  if (event == ftxui::Event::j || event == ftxui::Event::ArrowDown) {
+    loupe::scroll_by_rows(state.scroll, 1);
+    return true;
+  }
+  if (event == ftxui::Event::k || event == ftxui::Event::ArrowUp) {
+    loupe::scroll_by_rows(state.scroll, -1);
+    return true;
+  }
+  if (event == ftxui::Event::PageDown) {
+    loupe::scroll_by_rows(state.scroll, static_cast<int>(kPageMove));
+    return true;
+  }
+  if (event == ftxui::Event::PageUp) {
+    loupe::scroll_by_rows(state.scroll, -static_cast<int>(kPageMove));
+    return true;
+  }
+  if (event == ftxui::Event::r) {
+    reload(state);
+    return true;
+  }
+  // Swallow all other input while the diagnostics view is open.
+  return true;
 }
 
 ftxui::Element
@@ -931,12 +1017,26 @@ render_message(const loupe::LogMessage &message, bool selected,
                        | dim);
   }
 
-  Element body = message.content.empty()
-                   ? text("(empty)") | dim
-                   : render_markdown_text(
-                         clipped_content(loupe::format_structured_text(
-                             message.content)),
-                         search_query, current_search_match);
+  // Tool results and unknown payloads are raw output, not prose. Render
+  // them verbatim; Markdown would eat comment markers (`/* */`), turn ` * `
+  // lines into lists, and mangle indentation. They also skip
+  // format_structured_text: it rewrites the two characters `\n` into a line
+  // break, which corrupts literal escapes in command output (printf format
+  // strings, regexes, code).
+  const bool verbatim_body =
+      message.role == "tool" || message.role == "unknown";
+  const std::string clipped =
+      clipped_content(verbatim_body
+                          ? message.content
+                          : loupe::format_structured_text(message.content));
+  Element body = text("(empty)") | dim;
+  if (!message.content.empty()) {
+    body = verbatim_body
+             ? render_searchable_lines(clipped, Color::GrayLight, search_query,
+                                       current_search_match)
+             : render_markdown_text(clipped, search_query,
+                                    current_search_match);
+  }
 
   Elements body_rows{body};
   for (const auto &annotation : message.annotations) {
@@ -954,7 +1054,7 @@ render_message(const loupe::LogMessage &message, bool selected,
 
   if (selected) {
     return hbox({
-               text("|") | color(accent),
+               text("▌") | color(accent),
                text(" "),
                block,
            })
@@ -990,7 +1090,7 @@ ftxui::Element render_browser_entry(const BrowserEntry &entry, bool selected) {
 
   if (selected) {
     return hbox({
-               text("|") | color(Color::MagentaLight),
+               text("▌") | color(Color::MagentaLight),
                text(" "),
                block,
            })
@@ -1057,17 +1157,18 @@ ftxui::Element render_browser(BrowserState &state) {
           | bgcolor(Color::MagentaLight),
       text("  " + count) | color(Color::GrayLight),
       text("  " + cursor) | color(Color::GrayLight),
-      text("  " + state.root.string()) | color(Color::GrayLight),
+      text("  " + state.root.string()) | color(Color::GrayLight)
+          | xflex_shrink,
   };
 
   const std::string query = browser_query(state);
   if (!state.status.empty()) {
     status_items.push_back(text("  " + state.status)
-                           | color(Color::YellowLight));
+                           | color(Color::YellowLight) | xflex_shrink);
   }
   if (!query.empty()) {
     status_items.push_back(text("  filter \"" + clipped_label(query) + "\"")
-                           | color(Color::CyanLight));
+                           | color(Color::CyanLight) | xflex_shrink);
   }
 
   Element help = state.search_active
@@ -1101,7 +1202,14 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
                           : std::string_view{state.search_query};
 
   Elements rows;
-  if (state.parsed.messages.empty()) {
+  if (state.show_diagnostics) {
+    rows.push_back(text("Diagnostics") | bold | color(Color::YellowLight));
+    rows.push_back(separatorEmpty());
+    for (const auto &error : state.parsed.errors) {
+      rows.push_back(paragraph(error) | color(Color::YellowLight));
+      rows.push_back(separatorEmpty());
+    }
+  } else if (state.parsed.messages.empty()) {
     rows.push_back(render_errors(state.parsed.errors));
   } else {
     std::size_t index = 0;
@@ -1137,20 +1245,27 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
       text("  " + cursor) | color(Color::GrayLight),
       text("  " + std::string{loupe::log_format_name(state.format)})
           | color(Color::GrayLight),
-      text("  " + short_path(state.path)) | color(Color::GrayLight),
+      // Variable-length items shrink first when the bar runs out of
+      // width, keeping the counts and format readable.
+      text("  " + short_path(state.path)) | color(Color::GrayLight)
+          | xflex_shrink,
   };
 
   if (!state.parsed.errors.empty()) {
-    status_items.push_back(
+    Element diagnostics_count =
         text("  " + std::to_string(state.parsed.errors.size()) + " diagnostics")
-        | color(Color::YellowLight));
+        | color(Color::YellowLight);
+    if (state.show_diagnostics) {
+      diagnostics_count = diagnostics_count | inverted;
+    }
+    status_items.push_back(std::move(diagnostics_count));
     status_items.push_back(
         text("  " + clipped_label(state.parsed.errors.front()))
-        | color(Color::YellowLight));
+        | color(Color::YellowLight) | xflex_shrink);
   }
   if (!state.status.empty()) {
     status_items.push_back(text("  " + state.status)
-                           | color(Color::YellowLight));
+                           | color(Color::YellowLight) | xflex_shrink);
   }
   const bool has_visible_search = state.search_active
                                     ? !state.search_input.empty()
@@ -1158,11 +1273,16 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
   if (has_visible_search) {
     const std::string prefix = state.search_active ? "  preview " : "  search ";
     status_items.push_back(text(prefix + search_progress(state))
-                           | color(Color::CyanLight));
+                           | color(Color::CyanLight) | xflex_shrink);
   }
 
   std::string help_text = "wheel lines  j/k up/down page messages  / search  "
                           "n/N next/prev  r reload";
+  if (state.show_diagnostics) {
+    help_text = "wheel/j/k scroll  e close  r reload";
+  } else if (!state.parsed.errors.empty()) {
+    help_text += "  e diagnostics";
+  }
   if (can_return_to_browser) {
     help_text += "  b files";
   }
@@ -1232,6 +1352,13 @@ handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
   }
   if (state.search_active) {
     return handle_search_event(state, event);
+  }
+  if (state.show_diagnostics) {
+    return handle_diagnostics_event(state, event);
+  }
+  if (event == ftxui::Event::e) {
+    open_diagnostics(state);
+    return true;
   }
   if (event == ftxui::Event::Character('/')) {
     begin_search(state);

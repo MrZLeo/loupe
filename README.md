@@ -141,6 +141,7 @@ tar -xzf loupe-v0.1.0-linux-x86_64.tar.gz
 - `/`: filter files or search the current log
 - `n` / `N`: move between matches in the current log
 - `r`: reload the current log with the same explicit format
+- `e`: toggle the diagnostics view when the log produced diagnostics
 - `b`: return to the file browser
 - `q`: quit
 
