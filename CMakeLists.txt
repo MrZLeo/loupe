@@ -180,12 +180,15 @@ CPMAddPackage(
     "SIMDJSON_BUILD_BENCHMARKS OFF"
 )
 
+# The patch step must be idempotent: reconfiguring an existing build tree
+# re-runs it against an already-patched source, and plain `patch` fails on
+# reversed hunks. `-N` skips already-applied hunks (answering "no" to the
+# reversal prompt via EOF on stdin) and exits nonzero, hence the `|| true`.
 CPMAddPackage(
   NAME FTXUI
   GITHUB_REPOSITORY ArthurSonzogni/FTXUI
   VERSION 7.0.1
-  PATCHES
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/ftxui-terminal-input-burst.patch"
+  PATCH_COMMAND patch -p1 -N -r /dev/null < "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/ftxui-terminal-input-burst.patch" || true
   OPTIONS
     "FTXUI_BUILD_DOCS OFF"
     "FTXUI_BUILD_EXAMPLES OFF"
