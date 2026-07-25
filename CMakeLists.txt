@@ -21,7 +21,7 @@ include(cmake/Utils.cmake)
 include(cmake/CPM.cmake)
 include(cmake/ProjectStandard.cmake)
 
-project_detect_cxx_standard(PROJECT_CXX_STANDARD)
+project_configure_cxx_standard(23)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()

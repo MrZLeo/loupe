@@ -99,7 +99,7 @@ the `pi`, `codex`, `codex-exec`, and `claudecode` adapters.
 
 ## Build and test
 
-Loupe requires CMake 3.25+ and a C++20 compiler. Dependencies are fetched with
+Loupe requires CMake 3.25+ and a C++23 compiler. Dependencies are fetched with
 CPM during configuration.
 
 ```sh

@@ -21,6 +21,10 @@ CPMAddPackage(
     "CATCH_INSTALL_EXTRAS ON"
 )
 
+# Catch2's compiled library and the C++23 tests must agree on C++17
+# standard-library support so StringMaker<std::string_view> is defined.
+target_compile_features(Catch2 PRIVATE cxx_std_17)
+
 if(DEFINED Catch2_SOURCE_DIR)
   set(CATCH2_EXTRAS_DIR "${Catch2_SOURCE_DIR}/extras")
 elseif(DEFINED catch2_SOURCE_DIR)
