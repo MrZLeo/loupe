@@ -1647,7 +1647,7 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
     help_text += "  e diagnostics";
   }
   if (can_return_to_browser) {
-    help_text += "  b files";
+    help_text += "  b/- files";
   }
   help_text += "  q quit";
 
@@ -1896,7 +1896,8 @@ bool handle_app_event(ApplicationState &state, ftxui::Event event,
   }
   if (state.browser_available
       && !state.viewer.search_active
-      && event == ftxui::Event::b) {
+      && (event == ftxui::Event::b
+          || event == ftxui::Event::Character('-'))) {
     state.browser.status = "returned from " + short_path(state.viewer.path);
     state.showing_browser = true;
     return true;
