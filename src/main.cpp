@@ -1510,8 +1510,23 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
     }
     // Rows of one message are emitted together; the selected message's rows
     // are wrapped and focused as a unit so scroll following centers the
-    // whole message, not just its first line. Only the first row carries
-    // the selection bar.
+    // whole message, not just its first line. The selected message's role
+    // header stays visible: while manual scrolling clips the header above
+    // the viewport with the body still on screen, the whole header line is
+    // pinned to the top row (covering the body row that would render
+    // there), and the selection bar rides it.
+    std::size_t selection_bar_row = kNoRow;
+    bool pin_selected_header = false;
+    if (state.selected < state.message_rows.size()) {
+      const auto [selected_first, selected_end] =
+          state.message_rows[state.selected];
+      if (selected_first >= top) {
+        selection_bar_row = selected_first;
+      } else if (top < selected_end) {
+        pin_selected_header = true;
+        selection_bar_row = top;
+      }
+    }
     Elements message_elements;
     std::size_t current_message = lo < hi
                                       ? message_row_owner(state.message_rows, lo)
@@ -1546,10 +1561,14 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
           selected_message
           && std::binary_search(state.search_matches.begin(),
                                 state.search_matches.end(), message_index);
+      const std::size_t source_row =
+          pin_selected_header && selected_message && row == selection_bar_row
+              ? state.message_rows[message_index].first
+              : row;
       Element line_element =
-          render_display_line(state.display_lines[row], visible_search_query,
-                              current_search_match);
-      if (selected_message && row == state.message_rows[message_index].first) {
+          render_display_line(state.display_lines[source_row],
+                              visible_search_query, current_search_match);
+      if (selected_message && row == selection_bar_row) {
         message_elements.push_back(hbox({
             text("▌") | color(role_color(message.role)),
             text(" "),
