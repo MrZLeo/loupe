@@ -112,6 +112,7 @@ enum class HighlightKind {
 };
 
 constexpr std::size_t kPageMove = 10;
+constexpr std::size_t kNoRow = static_cast<std::size_t>(-1);
 
 int wheel_rows(ftxui::Event &event) {
   if (!event.is_mouse()) {
@@ -468,6 +469,53 @@ void move_browser_down(BrowserState &state, std::size_t amount) {
   }
   const std::size_t last = state.visible_entries.size() - 1;
   state.selected += std::min(last - state.selected, amount);
+}
+
+// render_browser lays out each entry as a two-row block followed by a blank
+// separator row; selection sync mirrors that geometry.
+constexpr int kBrowserRowsPerEntry = 3;
+
+// While a selection jump is pending (follow_focus set), top_row still holds
+// the pre-jump offset; the recenter happens at the next layout. Wheel
+// events arriving in the same input burst would scroll — and judge
+// selection visibility — against that stale offset, so resolve the
+// recenter here first, with the same geometry LineFrame applies. Also
+// refreshes max_top_row so the wheel delta is clamped against the current
+// content, not the previous view's.
+void resolve_pending_browser_recenter(BrowserState &state) {
+  if (!state.scroll.follow_focus
+      || state.scroll.viewport_rows <= 0
+      || state.visible_entries.empty()) {
+    return;
+  }
+  state.selected = std::min(state.selected, state.visible_entries.size() - 1);
+  const int first_row = static_cast<int>(state.selected) * kBrowserRowsPerEntry;
+  const int total_rows =
+      static_cast<int>(state.visible_entries.size()) * kBrowserRowsPerEntry;
+  state.scroll.max_top_row =
+      loupe::max_top_row_for(total_rows, state.scroll.viewport_rows);
+  // The focused element is the two-row entry block; its last row is
+  // first_row + 1, matching what LineFrame centers on during layout.
+  state.scroll.top_row = std::clamp(
+      loupe::centered_top_row(first_row, first_row + 1,
+                              state.scroll.viewport_rows),
+      0, state.scroll.max_top_row);
+}
+
+// While the mouse wheel scrolls, the topmost visible entry is the current
+// one, so the selection follows the viewport in both directions and
+// keyboard navigation resumes from what is on screen.
+void sync_browser_selection_to_viewport(BrowserState &state) {
+  if (state.visible_entries.empty() || state.scroll.viewport_rows <= 0) {
+    return;
+  }
+  const std::size_t last = state.visible_entries.size() - 1;
+  const int top = std::max(state.scroll.top_row, 0);
+  // First entry whose highlight row is at or below the top edge; the
+  // highlight only renders on the entry's first row, so anchoring on that
+  // row keeps the selection marker on screen.
+  const int index = (top + kBrowserRowsPerEntry - 1) / kBrowserRowsPerEntry;
+  state.selected = std::min(static_cast<std::size_t>(index), last);
 }
 
 const BrowserEntry *selected_browser_entry(const BrowserState &state) {
@@ -1131,11 +1179,12 @@ void append_message_display_lines(const loupe::LogMessage &message,
 }
 
 // Rebuild the cached display lines when the terminal width changed or the
-// messages were reloaded.
-void ensure_display_lines(AppState &state) {
+// messages were reloaded. Returns true when a rebuild happened, meaning row
+// geometry changed and any scroll offset predates it.
+bool ensure_display_lines(AppState &state) {
   const int terminal_width = ftxui::Terminal::Size().dimx;
   if (terminal_width == state.lines_width && !state.display_lines.empty()) {
-    return;
+    return false;
   }
   state.lines_width = terminal_width;
   state.display_lines.clear();
@@ -1147,6 +1196,7 @@ void ensure_display_lines(AppState &state) {
     append_message_display_lines(message, wrap_width, state.display_lines);
     state.message_rows.emplace_back(first_row, state.display_lines.size());
   }
+  return true;
 }
 
 std::size_t
@@ -1163,6 +1213,101 @@ message_row_owner(const std::vector<std::pair<std::size_t, std::size_t>> &rows,
     }
   }
   return low;
+}
+
+// The display row to center for the selected message when it is the
+// current search match but taller than the viewport: its first row where a
+// segment contains the query, so the highlighted match lands on screen the
+// way vim keeps the match line visible after n/N. kNoRow when whole-block
+// centering applies — no active match, the block fits the viewport, or the
+// match is in no single segment (spanning wrapped lines or the content
+// clip), where the block anchor at least shows the message.
+std::size_t search_focus_row(const AppState &state, std::string_view query,
+                             int viewport_rows) {
+  if (query.empty()
+      || state.selected >= state.message_rows.size()
+      || !std::binary_search(state.search_matches.begin(),
+                             state.search_matches.end(), state.selected)) {
+    return kNoRow;
+  }
+  const auto [first_row, end_row] = state.message_rows[state.selected];
+  if (end_row - first_row <= static_cast<std::size_t>(viewport_rows)) {
+    return kNoRow;
+  }
+  for (std::size_t row = first_row; row < end_row; ++row) {
+    for (const StyledSegment &segment : state.display_lines[row]) {
+      if (!loupe::find_text_matches(segment.text, query).empty()) {
+        return row;
+      }
+    }
+  }
+  return kNoRow;
+}
+
+std::string_view visible_query(const AppState &state) {
+  return state.search_active ? std::string_view{state.search_input}
+                             : std::string_view{state.search_query};
+}
+
+// Viewer counterpart of resolve_pending_browser_recenter: before a wheel
+// delta is applied, resolve the recenter a pending selection jump would
+// receive at the next layout, using the same geometry render() applies —
+// including the search-match row focus, or the first wheel notch after n/N
+// would snap a tall message from the centered match back to its header.
+void resolve_pending_recenter(AppState &state) {
+  if (!state.scroll.follow_focus || state.scroll.viewport_rows <= 0) {
+    return;
+  }
+  ensure_display_lines(state);
+  if (state.message_rows.empty()) {
+    return;
+  }
+  state.selected = std::min(state.selected, state.message_rows.size() - 1);
+  const auto [first_row, end_row] = state.message_rows[state.selected];
+  const std::size_t match_row = search_focus_row(
+      state, visible_query(state), state.scroll.viewport_rows);
+  const int focus_first = match_row != kNoRow
+                              ? static_cast<int>(match_row)
+                              : static_cast<int>(first_row);
+  const int focus_last = match_row != kNoRow
+                             ? static_cast<int>(match_row)
+                             : static_cast<int>(end_row) - 1;
+  state.scroll.max_top_row =
+      loupe::max_top_row_for(static_cast<int>(state.display_lines.size()),
+                             state.scroll.viewport_rows);
+  state.scroll.top_row = std::clamp(
+      loupe::centered_top_row(focus_first, focus_last,
+                              state.scroll.viewport_rows),
+      0, state.scroll.max_top_row);
+}
+
+// Viewer counterpart of sync_browser_selection_to_viewport: while the
+// mouse wheel scrolls, the message at the top of the viewport is the
+// current one.
+void sync_selection_to_viewport(AppState &state) {
+  if (state.scroll.viewport_rows <= 0) {
+    return;
+  }
+  if (ensure_display_lines(state)) {
+    // The rebuild rewrapped every row (terminal resize, reload): top_row is
+    // still in the old geometry, so anchoring on it would select an
+    // arbitrary message. The next layout re-clamps first.
+    return;
+  }
+  if (state.message_rows.empty()) {
+    return;
+  }
+  const std::size_t last = state.message_rows.size() - 1;
+  const std::size_t top =
+      static_cast<std::size_t>(std::max(state.scroll.top_row, 0));
+  std::size_t owner = message_row_owner(state.message_rows, top);
+  // When only a message's trailing blank separator remains at the top, its
+  // content is entirely above the viewport; the topmost visible message is
+  // the next one.
+  if (state.message_rows[owner].second - 1 <= top && owner < last) {
+    ++owner;
+  }
+  state.selected = owner;
 }
 
 ftxui::Element render_errors(const std::vector<std::string> &errors) {
@@ -1326,12 +1471,28 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
     const std::size_t total_rows = state.display_lines.size();
     const int viewport_rows =
         state.scroll.viewport_rows > 0 ? state.scroll.viewport_rows : 60;
+
+    // When the selected message is the current search match but taller
+    // than the viewport, focus its first matching row instead of the whole
+    // block (see search_focus_row); resolve_pending_recenter applies the
+    // same geometry from the event handler.
+    const std::size_t focus_match_row =
+        state.scroll.follow_focus
+            ? search_focus_row(state, visible_search_query, viewport_rows)
+            : kNoRow;
+
     if (state.scroll.follow_focus
         && state.selected < state.message_rows.size()) {
       const auto selected_rows = state.message_rows[state.selected];
-      const int target = loupe::centered_top_row(
-          static_cast<int>(selected_rows.first),
-          static_cast<int>(selected_rows.second) - 1, viewport_rows);
+      const int focus_first =
+          focus_match_row != kNoRow ? static_cast<int>(focus_match_row)
+                                    : static_cast<int>(selected_rows.first);
+      const int focus_last =
+          focus_match_row != kNoRow
+              ? static_cast<int>(focus_match_row)
+              : static_cast<int>(selected_rows.second) - 1;
+      const int target =
+          loupe::centered_top_row(focus_first, focus_last, viewport_rows);
       state.scroll.top_row = std::clamp(
           target, 0,
           loupe::max_top_row_for(static_cast<int>(total_rows),
@@ -1362,7 +1523,10 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
       Element block = message_elements.size() == 1
                           ? std::move(message_elements.front())
                           : vbox(std::move(message_elements));
-      if (current_message == state.selected) {
+      // When a match row carries the focus, the block must not: LineFrame
+      // centers on the focused element, and the render target above was
+      // computed for the match row.
+      if (current_message == state.selected && focus_match_row == kNoRow) {
         block = std::move(block) | focus;
       }
       rows.push_back(std::move(block));
@@ -1396,6 +1560,9 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
             text("  "),
             std::move(line_element),
         }));
+      }
+      if (selected_message && row == focus_match_row) {
+        message_elements.back() = std::move(message_elements.back()) | focus;
       }
     }
     flush_message();
@@ -1524,7 +1691,18 @@ bool handle_search_event(AppState &state, const ftxui::Event &event) {
 bool
 handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
   if (const int rows = wheel_rows(event); rows != 0) {
+    if (state.show_diagnostics) {
+      loupe::scroll_by_rows(state.scroll, rows);
+      return true;
+    }
+    resolve_pending_recenter(state);
+    const int previous_top_row = state.scroll.top_row;
     loupe::scroll_by_rows(state.scroll, rows);
+    // A wheel event that could not move the viewport (content fits, or at
+    // an edge) must not move the selection either.
+    if (!state.search_active && state.scroll.top_row != previous_top_row) {
+      sync_selection_to_viewport(state);
+    }
     return true;
   }
   if (state.search_active) {
@@ -1629,7 +1807,14 @@ bool handle_browser_event(ApplicationState &state, ftxui::Event event,
                           const ftxui::Closure &quit) {
   BrowserState &browser = state.browser;
   if (const int rows = wheel_rows(event); rows != 0) {
+    resolve_pending_browser_recenter(browser);
+    const int previous_top_row = browser.scroll.top_row;
     loupe::scroll_by_rows(browser.scroll, rows);
+    // A wheel event that could not move the viewport must not move the
+    // selection either.
+    if (browser.scroll.top_row != previous_top_row) {
+      sync_browser_selection_to_viewport(browser);
+    }
     return true;
   }
   if (browser.search_active) {
