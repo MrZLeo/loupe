@@ -43,6 +43,28 @@ TEST_CASE("overscrolling does not delay the first reverse step", "[scroll]") {
   REQUIRE(scroll.top_row == scroll.max_top_row - 1);
 }
 
+TEST_CASE("jump scrolling reaches the extremes", "[scroll]") {
+  loupe::ScrollState scroll;
+  loupe::update_scroll_layout(scroll, 0, 12);
+  loupe::scroll_by_rows(scroll, 5);
+
+  loupe::scroll_to_bottom(scroll);
+  REQUIRE_FALSE(scroll.follow_focus);
+  loupe::update_scroll_layout(scroll, 0, 12);
+  REQUIRE(scroll.top_row == 12);
+
+  // The jump survives a stale max_top_row: the next layout clamps to the
+  // real bottom even when the content grew since the jump was requested.
+  loupe::scroll_by_rows(scroll, -3);
+  loupe::scroll_to_bottom(scroll);
+  loupe::update_scroll_layout(scroll, 0, 40);
+  REQUIRE(scroll.top_row == 40);
+
+  loupe::scroll_to_top(scroll);
+  REQUIRE_FALSE(scroll.follow_focus);
+  REQUIRE(scroll.top_row == 0);
+}
+
 TEST_CASE("selection navigation resumes focus following", "[scroll]") {
   loupe::ScrollState scroll;
   loupe::update_scroll_layout(scroll, 2, 20);

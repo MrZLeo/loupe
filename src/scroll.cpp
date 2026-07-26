@@ -1,6 +1,7 @@
 #include "loupe/scroll.hpp"
 
 #include <algorithm>
+#include <limits>
 
 namespace loupe {
 
@@ -21,6 +22,20 @@ void scroll_by_rows(ScrollState &scroll, int rows) {
   const int clamped_rows =
       std::clamp(rows, -scroll.top_row, scroll.max_top_row - scroll.top_row);
   scroll.top_row += clamped_rows;
+}
+
+void scroll_to_top(ScrollState &scroll) {
+  scroll.follow_focus = false;
+  scroll.top_row = 0;
+}
+
+void scroll_to_bottom(ScrollState &scroll) {
+  scroll.follow_focus = false;
+  // max_top_row may be stale until the next layout (view switches reuse the
+  // same ScrollState for different content). Overshoot and let
+  // update_scroll_layout clamp to the real bottom. Half of INT_MAX keeps the
+  // intermediate arithmetic in scroll_by_rows free of overflow.
+  scroll.top_row = std::numeric_limits<int>::max() / 2;
 }
 
 int scroll_progress_percent(const ScrollState &scroll) {

@@ -16,6 +16,8 @@ void follow_selection(ScrollState &scroll);
 void
 update_scroll_layout(ScrollState &scroll, int focused_top_row, int max_top_row);
 void scroll_by_rows(ScrollState &scroll, int rows);
+void scroll_to_top(ScrollState &scroll);
+void scroll_to_bottom(ScrollState &scroll);
 int scroll_progress_percent(const ScrollState &scroll);
 
 // Scroll geometry shared by LineFrame (which applies it during layout) and
