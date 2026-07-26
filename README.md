@@ -136,13 +136,15 @@ tar -xzf loupe-v0.2.0-linux-x86_64.tar.gz
 ## Keyboard shortcuts
 
 - `j` / `k`, Up / Down, Page Up / Page Down: navigate file and message lists
-- Mouse wheel / touchpad scroll: move the viewport by line without changing
-  the selected item
+- `g` / `G`, Home / End: jump to the first / last file or message
+- Mouse wheel / touchpad scroll: move the viewport by line; the topmost
+  visible message becomes the current one, and its role header stays pinned
+  to the top of the screen while its body scrolls
 - `/`: filter files or search the current log
 - `n` / `N`: move between matches in the current log
 - `r`: reload the current log with the same explicit format
 - `e`: toggle the diagnostics view when the log produced diagnostics
-- `b`: return to the file browser
+- `b` / `-`: return to the file browser
 - `q`: quit
 
 ## License
