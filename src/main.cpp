@@ -1039,6 +1039,14 @@ bool handle_diagnostics_event(AppState &state, const ftxui::Event &event) {
     loupe::scroll_by_rows(state.scroll, -static_cast<int>(kPageMove));
     return true;
   }
+  if (event == ftxui::Event::g || event == ftxui::Event::Home) {
+    loupe::scroll_to_top(state.scroll);
+    return true;
+  }
+  if (event == ftxui::Event::G || event == ftxui::Event::End) {
+    loupe::scroll_to_bottom(state.scroll);
+    return true;
+  }
   if (event == ftxui::Event::r) {
     reload(state);
     return true;
@@ -1268,8 +1276,9 @@ ftxui::Element render_browser(BrowserState &state) {
                          text("  enter filter  esc cancel  backspace edit")
                              | color(Color::GrayDark),
                      })
-                   : text("wheel lines  j/k up/down page files  / find  "
-                          "enter open  r refresh  q quit")
+                   : text("wheel lines  j/k up/down page files  "
+                          "g/G first/last  / find  enter open  r refresh  "
+                          "q quit")
                          | color(Color::GrayDark);
 
   return vbox({
@@ -1444,10 +1453,10 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
                            | color(Color::CyanLight) | xflex_shrink);
   }
 
-  std::string help_text = "wheel lines  j/k up/down page messages  / search  "
-                          "n/N next/prev  r reload";
+  std::string help_text = "wheel lines  j/k up/down page messages  "
+                          "g/G first/last  / search  n/N next/prev  r reload";
   if (state.show_diagnostics) {
-    help_text = "wheel/j/k scroll  e close  r reload";
+    help_text = "wheel/j/k scroll  g/G top/bottom  e close  r reload";
   } else if (!state.parsed.errors.empty()) {
     help_text += "  e diagnostics";
   }
@@ -1560,6 +1569,14 @@ handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
     move_up(state, kPageMove);
     return true;
   }
+  if (event == ftxui::Event::g || event == ftxui::Event::Home) {
+    move_up(state, state.parsed.messages.size());
+    return true;
+  }
+  if (event == ftxui::Event::G || event == ftxui::Event::End) {
+    move_down(state, state.parsed.messages.size());
+    return true;
+  }
   if (event == ftxui::Event::r) {
     reload(state);
     return true;
@@ -1644,6 +1661,14 @@ bool handle_browser_event(ApplicationState &state, ftxui::Event event,
   }
   if (event == ftxui::Event::PageUp) {
     move_browser_up(browser, kPageMove);
+    return true;
+  }
+  if (event == ftxui::Event::g || event == ftxui::Event::Home) {
+    move_browser_up(browser, browser.visible_entries.size());
+    return true;
+  }
+  if (event == ftxui::Event::G || event == ftxui::Event::End) {
+    move_browser_down(browser, browser.visible_entries.size());
     return true;
   }
   if (event == ftxui::Event::r) {
