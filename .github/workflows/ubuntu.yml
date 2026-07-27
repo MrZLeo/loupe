@@ -35,7 +35,7 @@ jobs:
       run: cmake -Bbuild -G Ninja -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION -DCPM_SOURCE_CACHE=$CPM_SOURCE_CACHE -DLoupe_ENABLE_CODE_COVERAGE=1
       
     - name: build
-      run: cmake --build build -j4
+      run: cmake --build build
 
     - name: run tests
       run: |

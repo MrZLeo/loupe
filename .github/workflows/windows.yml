@@ -38,7 +38,7 @@ jobs:
       run: cmake -Bbuild -G Ninja -DCMAKE_BUILD_TYPE="$env:BUILD_TYPE" -DCMAKE_INSTALL_PREFIX="$HOME/$env:INSTALL_LOCATION" -DCPM_SOURCE_CACHE="$env:CPM_SOURCE_CACHE"
       
     - name: build
-      run: cmake --build build -j4
+      run: cmake --build build
 
     - name: run tests
       run: |
