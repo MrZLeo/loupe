@@ -124,14 +124,14 @@ each redraw atomically and avoid visible tearing.
 
 ## Releases
 
-Pushing a tag such as `v0.2.0` creates a GitHub release with these archives and
+Pushing a tag such as `v0.3.0` creates a GitHub release with these archives and
 a `SHA256SUMS` file:
 
 | Platform | Archive | Linking |
 | --- | --- | --- |
-| Linux x86_64 | `loupe-v0.2.0-linux-x86_64.tar.gz` | Fully static glibc executable |
-| Windows x86_64 | `loupe-v0.2.0-windows-x86_64.zip` | Static MSVC runtime |
-| macOS 13+ | `loupe-v0.2.0-macos-universal.tar.gz` | Universal arm64/x86_64 executable; system libraries only |
+| Linux x86_64 | `loupe-v0.3.0-linux-x86_64.tar.gz` | Fully static glibc executable |
+| Windows x86_64 | `loupe-v0.3.0-windows-x86_64.zip` | Static MSVC runtime |
+| macOS 13+ | `loupe-v0.3.0-macos-universal.tar.gz` | Universal arm64/x86_64 executable; system libraries only |
 
 Each archive contains one executable named `loupe` or `loupe.exe` and requires
 no separately installed project or C++ runtime libraries. macOS system
@@ -139,7 +139,7 @@ libraries remain dynamically linked because macOS does not provide a supported
 fully static system runtime.
 
 ```sh
-tar -xzf loupe-v0.2.0-linux-x86_64.tar.gz
+tar -xzf loupe-v0.3.0-linux-x86_64.tar.gz
 ./loupe --version
 ```
 
