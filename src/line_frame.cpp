@@ -36,8 +36,8 @@ public:
     pending_focused_top_row_ = 0;
     if (requirement_.focused.enabled) {
       const auto &focused = requirement_.focused.box;
-      pending_focused_top_row_ = centered_top_row(
-          focused.y_min, focused.y_max, scroll_.viewport_rows);
+      pending_focused_top_row_ =
+          centered_top_row(focused.y_min, focused.y_max, scroll_.viewport_rows);
     }
     layout_pending_ = true;
 

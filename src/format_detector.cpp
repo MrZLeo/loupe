@@ -30,8 +30,8 @@ constexpr int kWinThreshold = 3;
 
 bool is_codex_exec_type(std::string_view type) {
   static constexpr std::array<std::string_view, 8> kTypes{
-      "thread.started", "turn.started",   "turn.completed", "turn.failed",
-      "item.started",   "item.updated",   "item.completed", "error",
+      "thread.started", "turn.started", "turn.completed", "turn.failed",
+      "item.started",   "item.updated", "item.completed", "error",
   };
   for (const auto known : kTypes) {
     if (type == known) {
@@ -39,7 +39,8 @@ bool is_codex_exec_type(std::string_view type) {
     }
   }
   // Future item.*/turn.* events stay attributable to the event stream.
-  return type.starts_with("item.") || type.starts_with("turn.")
+  return type.starts_with("item.")
+      || type.starts_with("turn.")
       || type.starts_with("thread.");
 }
 
@@ -58,10 +59,17 @@ bool is_codex_rollout_type(std::string_view type) {
 
 bool is_pi_entry_type(std::string_view type) {
   static constexpr std::array<std::string_view, 12> kTypes{
-      "message",         "compaction",  "branch_summary",
-      "custom_message",  "custom",      "model_change",
-      "thinking_level_change",          "active_tools_change",
-      "label",           "session_info", "leaf",
+      "message",
+      "compaction",
+      "branch_summary",
+      "custom_message",
+      "custom",
+      "model_change",
+      "thinking_level_change",
+      "active_tools_change",
+      "label",
+      "session_info",
+      "leaf",
   };
   for (const auto known : kTypes) {
     if (type == known) {
@@ -73,12 +81,21 @@ bool is_pi_entry_type(std::string_view type) {
 
 bool is_claudecode_type(std::string_view type) {
   static constexpr std::array<std::string_view, 16> kTypes{
-      "user",           "assistant",   "system",
-      "summary",        "ai-title",    "attachment",
-      "file-history-delta",            "file-history-snapshot",
-      "last-prompt",    "mode",        "permission-mode",
-      "progress",       "queue-operation",
-      "agent-name",     "rate-limit-event",
+      "user",
+      "assistant",
+      "system",
+      "summary",
+      "ai-title",
+      "attachment",
+      "file-history-delta",
+      "file-history-snapshot",
+      "last-prompt",
+      "mode",
+      "permission-mode",
+      "progress",
+      "queue-operation",
+      "agent-name",
+      "rate-limit-event",
   };
   for (const auto known : kTypes) {
     if (type == known) {
@@ -113,7 +130,8 @@ std::optional<LogFormat> detect_log_format(std::string_view content) {
   detail::JsonlLine line;
   std::size_t scanned_bytes = 0;
   std::size_t scanned_lines = 0;
-  while (scanned_lines < kMaxLines && scanned_bytes < kMaxBytes
+  while (scanned_lines < kMaxLines
+         && scanned_bytes < kMaxBytes
          && reader.next(line)) {
     scanned_bytes += line.raw.size();
     ++scanned_lines;
@@ -157,7 +175,8 @@ std::optional<LogFormat> detect_log_format(std::string_view content) {
         && payload.type() == simdjson::dom::element_type::OBJECT) {
       scores.codex += kWeakVote;
     }
-    if (type == "session" && detail::element_at(document, "/id", field)
+    if (type == "session"
+        && detail::element_at(document, "/id", field)
         && detail::element_at(document, "/cwd", field)) {
       scores.pi += kWeakVote;
     }

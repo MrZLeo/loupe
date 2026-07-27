@@ -22,8 +22,8 @@ int scroll_progress_percent(const ScrollState &scroll);
 
 // Scroll geometry shared by LineFrame (which applies it during layout) and
 // renderers (which need to know, before layout, which rows will be visible).
-int centered_top_row(int focus_first_row, int focus_last_row,
-                     int viewport_rows);
+int
+centered_top_row(int focus_first_row, int focus_last_row, int viewport_rows);
 int max_top_row_for(int total_rows, int viewport_rows);
 
 } // namespace loupe

@@ -48,8 +48,8 @@ int scroll_progress_percent(const ScrollState &scroll) {
       static_cast<long long>(top_row) * 100 / scroll.max_top_row);
 }
 
-int centered_top_row(int focus_first_row, int focus_last_row,
-                     int viewport_rows) {
+int
+centered_top_row(int focus_first_row, int focus_last_row, int viewport_rows) {
   const int focus_rows = focus_last_row - focus_first_row + 1;
   if (focus_rows >= viewport_rows) {
     // Taller than the viewport: anchor the top so the block reads from its
@@ -58,7 +58,8 @@ int centered_top_row(int focus_first_row, int focus_last_row,
   }
   // Center the block, but never so far that any part of it leaves the
   // viewport.
-  const int centered = focus_first_row - (viewport_rows - 1) / 2
+  const int centered = focus_first_row
+                     - (viewport_rows - 1) / 2
                      + (focus_last_row - focus_first_row) / 2;
   return std::clamp(centered, focus_last_row - viewport_rows + 1,
                     focus_first_row);

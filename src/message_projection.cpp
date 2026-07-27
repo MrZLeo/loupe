@@ -430,8 +430,7 @@ make_display_messages(const SessionIR &session, const DisplayOptions &options) {
         }
         std::string content = execution_event_message(*execution);
         std::vector<std::string> annotations;
-        if (!execution->status.empty()
-            && execution->status != content) {
+        if (!execution->status.empty() && execution->status != content) {
           annotations.push_back("status=" + execution->status);
         }
         if (!execution->native_id.empty()) {

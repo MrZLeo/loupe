@@ -32,22 +32,33 @@ constexpr std::string_view kItemCompleted = "item.completed";
 constexpr std::string_view kError = "error";
 
 bool is_known_record_type(std::string_view type) {
-  return type == kThreadStarted || type == kTurnStarted
-      || type == kTurnCompleted || type == kTurnFailed
-      || type == kItemStarted || type == kItemUpdated
-      || type == kItemCompleted || type == kError;
+  return type == kThreadStarted
+      || type == kTurnStarted
+      || type == kTurnCompleted
+      || type == kTurnFailed
+      || type == kItemStarted
+      || type == kItemUpdated
+      || type == kItemCompleted
+      || type == kError;
 }
 
 bool is_known_item_type(std::string_view type) {
-  return type == "agent_message" || type == "reasoning"
-      || type == "command_execution" || type == "file_change"
-      || type == "mcp_tool_call" || type == "collab_tool_call"
-      || type == "web_search" || type == "todo_list" || type == "error";
+  return type == "agent_message"
+      || type == "reasoning"
+      || type == "command_execution"
+      || type == "file_change"
+      || type == "mcp_tool_call"
+      || type == "collab_tool_call"
+      || type == "web_search"
+      || type == "todo_list"
+      || type == "error";
 }
 
 bool is_tool_item(std::string_view type) {
-  return type == "command_execution" || type == "file_change"
-      || type == "mcp_tool_call" || type == "collab_tool_call"
+  return type == "command_execution"
+      || type == "file_change"
+      || type == "mcp_tool_call"
+      || type == "collab_tool_call"
       || type == "web_search";
 }
 
@@ -56,8 +67,11 @@ bool is_completion_only_item(std::string_view type) {
 }
 
 bool failed_status(std::string_view status) {
-  return status == "failed" || status == "declined" || status == "error"
-      || status == "cancelled" || status == "canceled";
+  return status == "failed"
+      || status == "declined"
+      || status == "error"
+      || status == "cancelled"
+      || status == "canceled";
 }
 
 std::string json_quote(std::string_view value) {
@@ -106,18 +120,19 @@ std::string json_quote(std::string_view value) {
 
 void invalid_field_type(SessionParseResult &result, const RecordIR &record,
                         std::string_view field, std::string_view expected) {
-  add_diagnostic(
-      result, DiagnosticSeverity::Warning, DiagnosticCode::InvalidFieldType,
-      "Codex Exec field `" + std::string{field} + "` must be "
-          + std::string{expected},
-      record.source_line);
+  add_diagnostic(result, DiagnosticSeverity::Warning,
+                 DiagnosticCode::InvalidFieldType,
+                 "Codex Exec field `"
+                     + std::string{field}
+                     + "` must be "
+                     + std::string{expected},
+                 record.source_line);
 }
 
 void missing_field(SessionParseResult &result, const RecordIR &record,
                    std::string_view field) {
   add_diagnostic(
-      result, DiagnosticSeverity::Warning,
-      DiagnosticCode::MissingRequiredField,
+      result, DiagnosticSeverity::Warning, DiagnosticCode::MissingRequiredField,
       "Codex Exec record is missing required `" + std::string{field} + "`",
       record.source_line);
 }
@@ -178,9 +193,9 @@ void merge_json_field(element owner, std::string_view pointer,
     return;
   }
   if (expected_type && field.type() != *expected_type) {
-    const std::string expected =
-        *expected_type == element_type::ARRAY ? "an array or null"
-                                             : "an object or null";
+    const std::string expected = *expected_type == element_type::ARRAY
+                                   ? "an array or null"
+                                   : "an object or null";
     invalid_field_type(result, record, field_name, expected);
     return;
   }
@@ -196,10 +211,10 @@ void merge_json_value_field(element owner, std::string_view pointer,
   }
 }
 
-void merge_int_field(element owner, std::string_view pointer,
-                     std::string_view field_name,
-                     std::optional<int> &destination,
-                     SessionParseResult &result, const RecordIR &record) {
+void
+merge_int_field(element owner, std::string_view pointer,
+                std::string_view field_name, std::optional<int> &destination,
+                SessionParseResult &result, const RecordIR &record) {
   element field;
   if (!element_at(owner, pointer, field)) {
     return;
@@ -328,13 +343,13 @@ std::string run_correlation(const ParserState &state) {
 }
 
 std::string next_turn_correlation(ParserState &state) {
-  return run_correlation(state) + ":t"
+  return run_correlation(state)
+       + ":t"
        + std::to_string(state.next_turn_index++);
 }
 
 std::string next_item_correlation(TurnState &turn) {
-  return turn.correlation_id + ":i"
-       + std::to_string(turn.next_item_index++);
+  return turn.correlation_id + ":i" + std::to_string(turn.next_item_index++);
 }
 
 RecordIR make_record(const JsonlLine &line, std::string native_type) {
@@ -376,13 +391,16 @@ void merge_item_snapshot(element item, ItemState &state,
   }
   if (!native_type.empty()) {
     if (!state.snapshot.type.empty() && state.snapshot.type != native_type) {
-      add_diagnostic(
-          result, DiagnosticSeverity::Warning,
-          DiagnosticCode::InvalidLifecycle,
-          "Codex Exec item `" + state.snapshot.native_id
-              + "` changes type from `" + state.snapshot.type + "` to `"
-              + native_type + "`",
-          record.source_line);
+      add_diagnostic(result, DiagnosticSeverity::Warning,
+                     DiagnosticCode::InvalidLifecycle,
+                     "Codex Exec item `"
+                         + state.snapshot.native_id
+                         + "` changes type from `"
+                         + state.snapshot.type
+                         + "` to `"
+                         + native_type
+                         + "`",
+                     record.source_line);
     } else {
       state.snapshot.type = native_type;
     }
@@ -395,15 +413,15 @@ void merge_item_snapshot(element item, ItemState &state,
     return;
   }
   if (type == "error") {
-    merge_string_field(item, "/message", "item.message",
-                       state.snapshot.message, result, record);
+    merge_string_field(item, "/message", "item.message", state.snapshot.message,
+                       result, record);
     return;
   }
   if (type == "command_execution") {
     merge_string_field(item, "/status", "item.status", state.snapshot.status,
                        result, record);
-    merge_string_field(item, "/command", "item.command",
-                       state.snapshot.command, result, record);
+    merge_string_field(item, "/command", "item.command", state.snapshot.command,
+                       result, record);
     merge_string_field(item, "/aggregated_output", "item.aggregated_output",
                        state.snapshot.aggregated_output, result, record);
     merge_int_field(item, "/exit_code", "item.exit_code",
@@ -424,8 +442,7 @@ void merge_item_snapshot(element item, ItemState &state,
                        result, record);
     merge_string_field(item, "/tool", "item.tool", state.snapshot.tool, result,
                        record);
-    merge_json_value_field(item, "/arguments",
-                           state.snapshot.arguments_json);
+    merge_json_value_field(item, "/arguments", state.snapshot.arguments_json);
     merge_json_field(item, "/result", "item.result", std::nullopt,
                      state.snapshot.result_json, result, record);
     merge_json_field(item, "/error", "item.error", std::nullopt,
@@ -444,9 +461,8 @@ void merge_item_snapshot(element item, ItemState &state,
                      state.snapshot.receiver_thread_ids_json, result, record);
     merge_string_field(item, "/prompt", "item.prompt", state.snapshot.prompt,
                        result, record);
-    merge_json_field(item, "/agents_states", "item.agents_states",
-                     std::nullopt, state.snapshot.agents_states_json, result,
-                     record);
+    merge_json_field(item, "/agents_states", "item.agents_states", std::nullopt,
+                     state.snapshot.agents_states_json, result, record);
     return;
   }
   if (type == "web_search") {
@@ -471,17 +487,17 @@ std::string item_call_id(const ItemState &state) {
 std::string collab_input(const ItemSnapshot &snapshot) {
   std::string input = "{";
   bool needs_comma = false;
-  const auto append_member =
-      [&](std::string_view name, const std::string &json_value,
-          std::string &destination, bool &comma) {
-        if (comma) {
-          destination.push_back(',');
-        }
-        destination += json_quote(name);
-        destination.push_back(':');
-        destination += json_value;
-        comma = true;
-      };
+  const auto append_member = [&](std::string_view name,
+                                 const std::string &json_value,
+                                 std::string &destination, bool &comma) {
+    if (comma) {
+      destination.push_back(',');
+    }
+    destination += json_quote(name);
+    destination.push_back(':');
+    destination += json_value;
+    comma = true;
+  };
 
   if (snapshot.sender_thread_id) {
     append_member("sender_thread_id", json_quote(*snapshot.sender_thread_id),
@@ -559,7 +575,8 @@ ToolCallEvent make_tool_call(const ItemState &state) {
 }
 
 void refresh_tool_call(SessionParseResult &result, const ItemState &state) {
-  if (!state.call_record_index || !state.call_event_index
+  if (!state.call_record_index
+      || !state.call_event_index
       || *state.call_record_index >= result.session.records.size()) {
     return;
   }
@@ -567,8 +584,8 @@ void refresh_tool_call(SessionParseResult &result, const ItemState &state) {
   if (*state.call_event_index >= events.size()) {
     return;
   }
-  if (auto *call =
-          std::get_if<ToolCallEvent>(&events[*state.call_event_index].payload)) {
+  if (auto *call = std::get_if<ToolCallEvent>(
+          &events[*state.call_event_index].payload)) {
     *call = make_tool_call(state);
   }
 }
@@ -628,10 +645,9 @@ void append_mcp_content(element value, std::vector<ContentBlock> &output) {
         });
       } else {
         output.push_back(UnknownContent{
-            .native_type =
-                block.type() == element_type::OBJECT
-                    ? string_at(block, "/type").value_or("mcp_content")
-                    : std::string{"mcp_content"},
+            .native_type = block.type() == element_type::OBJECT
+                             ? string_at(block, "/type").value_or("mcp_content")
+                             : std::string{"mcp_content"},
             .json = json_text(block),
         });
       }
@@ -651,8 +667,7 @@ void append_mcp_result_json(const std::string &json,
   simdjson::padded_string padded{json};
   element root;
   if (parser.parse(padded).get(root)) {
-    output.push_back(
-        UnknownContent{.native_type = "mcp_result", .json = json});
+    output.push_back(UnknownContent{.native_type = "mcp_result", .json = json});
     return;
   }
 
@@ -728,8 +743,8 @@ ToolResultEvent make_tool_result(const ItemState &state) {
     result.name = "file_change";
     result.output.push_back(TextContent{
         .text = snapshot.changes_json
-                    ? file_change_summary(*snapshot.changes_json)
-                    : std::string{},
+                  ? file_change_summary(*snapshot.changes_json)
+                  : std::string{},
     });
   } else if (snapshot.type == "mcp_tool_call") {
     result.name = snapshot.tool.value_or("");
@@ -752,18 +767,17 @@ ToolResultEvent make_tool_result(const ItemState &state) {
 }
 
 template <typename Value>
-void require_snapshot_field(const std::optional<Value> &value,
-                            std::string_view field_name,
-                            SessionParseResult &result,
-                            const RecordIR &record) {
+void
+require_snapshot_field(const std::optional<Value> &value,
+                       std::string_view field_name, SessionParseResult &result,
+                       const RecordIR &record) {
   if (!value) {
     missing_field(result, record, field_name);
   }
 }
 
 void append_item_semantics(RecordIR &record, ItemState &state,
-                           ExecutionPhase phase,
-                           SessionParseResult &result) {
+                           ExecutionPhase phase, SessionParseResult &result) {
   const std::string &type = state.snapshot.type;
   const bool completed = phase == ExecutionPhase::Completed;
 
@@ -807,9 +821,12 @@ void append_item_semantics(RecordIR &record, ItemState &state,
     state.call_emitted = true;
   }
 
-  if (completed && type != "web_search"
-      && (type == "command_execution" || type == "file_change"
-          || type == "mcp_tool_call" || type == "collab_tool_call")
+  if (completed
+      && type != "web_search"
+      && (type == "command_execution"
+          || type == "file_change"
+          || type == "mcp_tool_call"
+          || type == "collab_tool_call")
       && !state.result_emitted) {
     require_snapshot_field(state.snapshot.status, "item.status", result,
                            record);
@@ -826,26 +843,24 @@ void append_item_semantics(RecordIR &record, ItemState &state,
 
   if (completed && type == "agent_message" && !state.content_emitted) {
     require_snapshot_field(state.snapshot.text, "item.text", result, record);
-    append_event(record,
-                 MessageEvent{
-                     .role = Role::Assistant,
-                     .raw_role = "assistant",
-                     .provider = {},
-                     .model = {},
-                     .phase = {},
-                     .content = {TextContent{
-                         .text = state.snapshot.text.value_or(""),
-                     }},
-                 });
+    append_event(record, MessageEvent{
+                             .role = Role::Assistant,
+                             .raw_role = "assistant",
+                             .provider = {},
+                             .model = {},
+                             .phase = {},
+                             .content = {TextContent{
+                                 .text = state.snapshot.text.value_or(""),
+                             }},
+                         });
     state.content_emitted = true;
   } else if (completed && type == "reasoning" && !state.content_emitted) {
     require_snapshot_field(state.snapshot.text, "item.text", result, record);
-    append_event(record,
-                 ReasoningEvent{
-                     .summary = {},
-                     .content = state.snapshot.text.value_or(""),
-                     .encrypted = false,
-                 });
+    append_event(record, ReasoningEvent{
+                             .summary = {},
+                             .content = state.snapshot.text.value_or(""),
+                             .encrypted = false,
+                         });
     state.content_emitted = true;
   }
 
@@ -854,8 +869,7 @@ void append_item_semantics(RecordIR &record, ItemState &state,
       require_snapshot_field(state.snapshot.todo_items_json, "item.items",
                              result, record);
     }
-    const std::string value =
-        state.snapshot.todo_items_json.value_or("null");
+    const std::string value = state.snapshot.todo_items_json.value_or("null");
     if (!state.todo_emitted || state.last_todo_value != value) {
       append_event(record, MetadataEvent{
                                .name = "codex_exec.todo_list",
@@ -865,11 +879,11 @@ void append_item_semantics(RecordIR &record, ItemState &state,
       state.last_todo_value = value;
     }
   } else if (!is_known_item_type(type)) {
-    append_event(record, UnknownEvent{
-                             .native_type =
-                                 type.empty() ? std::string{"unknown_item"}
-                                              : type,
-                         });
+    append_event(
+        record,
+        UnknownEvent{
+            .native_type = type.empty() ? std::string{"unknown_item"} : type,
+        });
   }
 }
 
@@ -887,8 +901,7 @@ void report_incomplete(SessionParseResult &result, TurnState &turn,
   pending_items.reserve(turn.items.size());
   for (auto &[key, item] : turn.items) {
     static_cast<void>(key);
-    if (item.saw_started && !item.saw_completed
-        && !item.incomplete_reported) {
+    if (item.saw_started && !item.saw_completed && !item.incomplete_reported) {
       pending_items.push_back(&item);
     }
   }
@@ -904,14 +917,15 @@ void report_incomplete(SessionParseResult &result, TurnState &turn,
     add_diagnostic(
         result, DiagnosticSeverity::Warning, DiagnosticCode::IncompleteStream,
         "Codex Exec stream ended or crossed a boundary before item `"
-            + item->snapshot.native_id + "` completed",
+            + item->snapshot.native_id
+            + "` completed",
         item->started_line == 0 ? fallback_line : item->started_line);
     item->incomplete_reported = true;
   }
 }
 
-TurnState &start_turn(ParserState &state, bool inferred,
-                      std::size_t source_line) {
+TurnState &
+start_turn(ParserState &state, bool inferred, std::size_t source_line) {
   state.turn = TurnState{
       .correlation_id = next_turn_correlation(state),
       .active = true,
@@ -936,12 +950,12 @@ TurnState &turn_for_item(ParserState &state, SessionParseResult &result,
     const auto iterator = state.turn->items.find(std::string{native_id});
     if (iterator != state.turn->items.end()
         && !iterator->second.saw_completed) {
-      add_diagnostic(
-          result, DiagnosticSeverity::Warning,
-          DiagnosticCode::InvalidLifecycle,
-          "Codex Exec item `" + std::string{native_id}
-              + "` continues after its turn is terminal",
-          record.source_line);
+      add_diagnostic(result, DiagnosticSeverity::Warning,
+                     DiagnosticCode::InvalidLifecycle,
+                     "Codex Exec item `"
+                         + std::string{native_id}
+                         + "` continues after its turn is terminal",
+                     record.source_line);
       return *state.turn;
     }
   }
@@ -949,22 +963,24 @@ TurnState &turn_for_item(ParserState &state, SessionParseResult &result,
   if (state.turn) {
     report_incomplete(result, *state.turn, record.source_line);
   }
-  add_diagnostic(
-      result, DiagnosticSeverity::Warning, DiagnosticCode::InvalidLifecycle,
-      "Codex Exec item `" + std::string{native_type}
-          + "` appeared outside an active turn",
-      record.source_line);
+  add_diagnostic(result, DiagnosticSeverity::Warning,
+                 DiagnosticCode::InvalidLifecycle,
+                 "Codex Exec item `"
+                     + std::string{native_type}
+                     + "` appeared outside an active turn",
+                 record.source_line);
   return start_turn(state, true, record.source_line);
 }
 
-ItemState &select_item_state(TurnState &turn, std::string key,
-                             const std::string &native_id,
-                             const std::string &native_type,
-                             ExecutionPhase phase, SessionParseResult &result,
-                             const RecordIR &record) {
+ItemState &
+select_item_state(TurnState &turn, std::string key,
+                  const std::string &native_id, const std::string &native_type,
+                  ExecutionPhase phase, SessionParseResult &result,
+                  const RecordIR &record) {
   auto iterator = turn.items.find(key);
 
-  if (phase == ExecutionPhase::Started && iterator != turn.items.end()
+  if (phase == ExecutionPhase::Started
+      && iterator != turn.items.end()
       && iterator->second.saw_completed) {
     ItemState replacement;
     replacement.correlation_id = next_item_correlation(turn);
@@ -982,18 +998,19 @@ ItemState &select_item_state(TurnState &turn, std::string key,
     iterator = turn.items.emplace(std::move(key), std::move(fresh)).first;
 
     if (phase == ExecutionPhase::Updated && native_type != "todo_list") {
-      add_diagnostic(
-          result, DiagnosticSeverity::Warning,
-          DiagnosticCode::InvalidLifecycle,
-          "Codex Exec item `" + native_id
-              + "` was updated before it was started",
-          record.source_line);
+      add_diagnostic(result, DiagnosticSeverity::Warning,
+                     DiagnosticCode::InvalidLifecycle,
+                     "Codex Exec item `"
+                         + native_id
+                         + "` was updated before it was started",
+                     record.source_line);
     }
     return iterator->second;
   }
 
   ItemState &item = iterator->second;
-  if (phase == ExecutionPhase::Started && item.saw_started
+  if (phase == ExecutionPhase::Started
+      && item.saw_started
       && !item.saw_completed) {
     add_diagnostic(
         result, DiagnosticSeverity::Warning, DiagnosticCode::InvalidLifecycle,
@@ -1019,33 +1036,31 @@ void append_item_execution(RecordIR &record, const ItemState &state,
   if (message.empty() && state.snapshot.error_json) {
     message = error_message_json(*state.snapshot.error_json);
   }
-  append_event(record,
-               ExecutionEvent{
-                   .subject = ExecutionSubject::Item,
-                   .phase = phase,
-                   .correlation_id = state.correlation_id,
-                   .native_id = state.snapshot.native_id,
-                   .native_type = state.snapshot.type,
-                   .status = state.snapshot.status.value_or(""),
-                   .message = std::move(message),
-                   .terminal = phase == ExecutionPhase::Completed,
-               });
+  append_event(record, ExecutionEvent{
+                           .subject = ExecutionSubject::Item,
+                           .phase = phase,
+                           .correlation_id = state.correlation_id,
+                           .native_id = state.snapshot.native_id,
+                           .native_type = state.snapshot.type,
+                           .status = state.snapshot.status.value_or(""),
+                           .message = std::move(message),
+                           .terminal = phase == ExecutionPhase::Completed,
+                       });
 }
 
-void append_rejected_item_execution(RecordIR &record, const ItemState &state,
-                                    element item,
-                                    std::string_view native_type) {
-  append_event(record,
-               ExecutionEvent{
-                   .subject = ExecutionSubject::Item,
-                   .phase = ExecutionPhase::Unknown,
-                   .correlation_id = state.correlation_id,
-                   .native_id = state.snapshot.native_id,
-                   .native_type = std::string{native_type},
-                   .status = string_at(item, "/status").value_or(""),
-                   .message = string_at(item, "/message").value_or(""),
-                   .terminal = false,
-               });
+void
+append_rejected_item_execution(RecordIR &record, const ItemState &state,
+                               element item, std::string_view native_type) {
+  append_event(record, ExecutionEvent{
+                           .subject = ExecutionSubject::Item,
+                           .phase = ExecutionPhase::Unknown,
+                           .correlation_id = state.correlation_id,
+                           .native_id = state.snapshot.native_id,
+                           .native_type = std::string{native_type},
+                           .status = string_at(item, "/status").value_or(""),
+                           .message = string_at(item, "/message").value_or(""),
+                           .terminal = false,
+                       });
 }
 
 void parse_item_record(element root, RecordIR &record,
@@ -1054,60 +1069,58 @@ void parse_item_record(element root, RecordIR &record,
   element item;
   if (!element_at(root, "/item", item)) {
     missing_field(result, record, "item");
-    append_event(record,
-                 ExecutionEvent{
-                     .subject = ExecutionSubject::Item,
-                     .phase = phase,
-                     .correlation_id =
-                         run_correlation(state) + ":unbound:i"
-                         + std::to_string(record.sequence),
-                     .native_id = {},
-                     .native_type = {},
-                     .status = {},
-                     .message = {},
-                     .terminal = phase == ExecutionPhase::Completed,
-                 });
+    append_event(record, ExecutionEvent{
+                             .subject = ExecutionSubject::Item,
+                             .phase = phase,
+                             .correlation_id = run_correlation(state)
+                                             + ":unbound:i"
+                                             + std::to_string(record.sequence),
+                             .native_id = {},
+                             .native_type = {},
+                             .status = {},
+                             .message = {},
+                             .terminal = phase == ExecutionPhase::Completed,
+                         });
     return;
   }
   if (item.type() != element_type::OBJECT) {
     invalid_field_type(result, record, "item", "an object");
-    append_event(record,
-                 ExecutionEvent{
-                     .subject = ExecutionSubject::Item,
-                     .phase = phase,
-                     .correlation_id =
-                         run_correlation(state) + ":unbound:i"
-                         + std::to_string(record.sequence),
-                     .native_id = {},
-                     .native_type = {},
-                     .status = {},
-                     .message = {},
-                     .terminal = phase == ExecutionPhase::Completed,
-                 });
+    append_event(record, ExecutionEvent{
+                             .subject = ExecutionSubject::Item,
+                             .phase = phase,
+                             .correlation_id = run_correlation(state)
+                                             + ":unbound:i"
+                                             + std::to_string(record.sequence),
+                             .native_id = {},
+                             .native_type = {},
+                             .status = {},
+                             .message = {},
+                             .terminal = phase == ExecutionPhase::Completed,
+                         });
     return;
   }
 
   const std::string native_id =
       required_string(item, "/id", "item.id", result, record).value_or("");
   const std::string native_type =
-      required_string(item, "/type", "item.type", result, record)
-          .value_or("");
+      required_string(item, "/type", "item.type", result, record).value_or("");
   if (is_completion_only_item(native_type)
       && phase != ExecutionPhase::Completed) {
-    add_diagnostic(
-        result, DiagnosticSeverity::Warning, DiagnosticCode::InvalidLifecycle,
-        "Codex Exec item type `" + native_type
-            + "` is only valid on item.completed",
-        record.source_line);
+    add_diagnostic(result, DiagnosticSeverity::Warning,
+                   DiagnosticCode::InvalidLifecycle,
+                   "Codex Exec item type `"
+                       + native_type
+                       + "` is only valid on item.completed",
+                   record.source_line);
   }
 
   const bool prelude_error =
       native_type == "error" && (!state.turn || !state.turn->active);
   if (prelude_error) {
     ItemState prelude;
-    prelude.correlation_id =
-        run_correlation(state) + ":prelude:i"
-        + std::to_string(state.next_prelude_item_index++);
+    prelude.correlation_id = run_correlation(state)
+                           + ":prelude:i"
+                           + std::to_string(state.next_prelude_item_index++);
     prelude.snapshot.native_id = native_id;
     prelude.snapshot.type = native_type;
     merge_item_snapshot(item, prelude, native_id, native_type, result, record);
@@ -1120,32 +1133,33 @@ void parse_item_record(element root, RecordIR &record,
 
   TurnState &turn =
       turn_for_item(state, result, record, native_id, native_type);
-  const std::string key =
-      native_id.empty() || native_type.empty()
-          ? "\x1fmissing:" + std::to_string(record.sequence)
-          : native_id;
-  ItemState &item_state =
-      select_item_state(turn, key, native_id, native_type, phase, result,
-                        record);
-  const bool type_conflict =
-      !native_type.empty() && !item_state.snapshot.type.empty()
-      && item_state.snapshot.type != native_type;
+  const std::string key = native_id.empty() || native_type.empty()
+                            ? "\x1fmissing:" + std::to_string(record.sequence)
+                            : native_id;
+  ItemState &item_state = select_item_state(turn, key, native_id, native_type,
+                                            phase, result, record);
+  const bool type_conflict = !native_type.empty()
+                          && !item_state.snapshot.type.empty()
+                          && item_state.snapshot.type != native_type;
   const bool continues_after_completion =
       item_state.saw_completed && phase != ExecutionPhase::Started;
   if (type_conflict || continues_after_completion) {
     if (type_conflict) {
-      add_diagnostic(
-          result, DiagnosticSeverity::Warning,
-          DiagnosticCode::InvalidLifecycle,
-          "Codex Exec item `" + native_id + "` changes type from `"
-              + item_state.snapshot.type + "` to `" + native_type + "`",
-          record.source_line);
+      add_diagnostic(result, DiagnosticSeverity::Warning,
+                     DiagnosticCode::InvalidLifecycle,
+                     "Codex Exec item `"
+                         + native_id
+                         + "` changes type from `"
+                         + item_state.snapshot.type
+                         + "` to `"
+                         + native_type
+                         + "`",
+                     record.source_line);
     }
     append_rejected_item_execution(record, item_state, item, native_type);
     return;
   }
-  merge_item_snapshot(item, item_state, native_id, native_type, result,
-                      record);
+  merge_item_snapshot(item, item_state, native_id, native_type, result, record);
 
   if (phase == ExecutionPhase::Started) {
     item_state.saw_started = true;
@@ -1168,8 +1182,7 @@ void parse_item_record(element root, RecordIR &record,
 }
 
 std::string record_error_message(element root, SessionParseResult &result,
-                                 const RecordIR &record,
-                                 bool nested_error) {
+                                 const RecordIR &record, bool nested_error) {
   const std::string_view pointer =
       nested_error ? std::string_view{"/error"} : std::string_view{"/message"};
   element error;
@@ -1203,8 +1216,8 @@ std::string record_error_message(element root, SessionParseResult &result,
   return {};
 }
 
-void append_turn_usage(element root, RecordIR &record,
-                       SessionParseResult &result) {
+void
+append_turn_usage(element root, RecordIR &record, SessionParseResult &result) {
   element usage;
   if (!element_at(root, "/usage", usage)) {
     missing_field(result, record, "usage");
@@ -1218,18 +1231,16 @@ void append_turn_usage(element root, RecordIR &record,
   UsageEvent event{
       // Exec currently reports cumulative totals, including after resume.
       .scope = UsageScope::Unknown,
-      .input_tokens =
-          required_uint(usage, "/input_tokens", "usage.input_tokens", result,
-                        record),
+      .input_tokens = required_uint(usage, "/input_tokens",
+                                    "usage.input_tokens", result, record),
       .cached_input_tokens =
           required_uint(usage, "/cached_input_tokens",
                         "usage.cached_input_tokens", result, record),
       .cache_write_tokens =
           checked_uint(usage, "/cache_write_input_tokens",
                        "usage.cache_write_input_tokens", result, record),
-      .output_tokens =
-          required_uint(usage, "/output_tokens", "usage.output_tokens", result,
-                        record),
+      .output_tokens = required_uint(usage, "/output_tokens",
+                                     "usage.output_tokens", result, record),
       .reasoning_tokens =
           required_uint(usage, "/reasoning_output_tokens",
                         "usage.reasoning_output_tokens", result, record),
@@ -1237,8 +1248,10 @@ void append_turn_usage(element root, RecordIR &record,
       .cost = std::nullopt,
   };
 
-  if (event.input_tokens || event.cached_input_tokens
-      || event.cache_write_tokens || event.output_tokens
+  if (event.input_tokens
+      || event.cached_input_tokens
+      || event.cache_write_tokens
+      || event.output_tokens
       || event.reasoning_tokens) {
     append_event(record, std::move(event));
   }
@@ -1274,26 +1287,27 @@ void start_thread(element root, RecordIR &record, SessionParseResult &result,
       result.session.session_id = thread_id;
     } else if (result.session.session_id != thread_id
                && state.reported_thread_ids.insert(thread_id).second) {
-      add_diagnostic(
-          result, DiagnosticSeverity::Warning,
-          DiagnosticCode::InconsistentSessionId,
-          "Codex Exec stream changes thread id from `"
-              + result.session.session_id + "` to `" + thread_id + "`",
-          record.source_line);
+      add_diagnostic(result, DiagnosticSeverity::Warning,
+                     DiagnosticCode::InconsistentSessionId,
+                     "Codex Exec stream changes thread id from `"
+                         + result.session.session_id
+                         + "` to `"
+                         + thread_id
+                         + "`",
+                     record.source_line);
     }
   }
 
-  append_event(record,
-               ExecutionEvent{
-                   .subject = ExecutionSubject::Thread,
-                   .phase = ExecutionPhase::Started,
-                   .correlation_id = run_correlation(state),
-                   .native_id = thread_id,
-                   .native_type = record.native_type,
-                   .status = {},
-                   .message = {},
-                   .terminal = false,
-               });
+  append_event(record, ExecutionEvent{
+                           .subject = ExecutionSubject::Thread,
+                           .phase = ExecutionPhase::Started,
+                           .correlation_id = run_correlation(state),
+                           .native_id = thread_id,
+                           .native_type = record.native_type,
+                           .status = {},
+                           .message = {},
+                           .terminal = false,
+                       });
 }
 
 void start_native_turn(RecordIR &record, SessionParseResult &result,
@@ -1302,24 +1316,22 @@ void start_native_turn(RecordIR &record, SessionParseResult &result,
     report_incomplete(result, *state.turn, record.source_line);
     if (state.turn->active) {
       add_diagnostic(
-          result, DiagnosticSeverity::Warning,
-          DiagnosticCode::InvalidLifecycle,
+          result, DiagnosticSeverity::Warning, DiagnosticCode::InvalidLifecycle,
           "Codex Exec turn started before the previous turn terminated",
           record.source_line);
     }
   }
   TurnState &turn = start_turn(state, false, record.source_line);
-  append_event(record,
-               ExecutionEvent{
-                   .subject = ExecutionSubject::Turn,
-                   .phase = ExecutionPhase::Started,
-                   .correlation_id = turn.correlation_id,
-                   .native_id = {},
-                   .native_type = record.native_type,
-                   .status = {},
-                   .message = {},
-                   .terminal = false,
-               });
+  append_event(record, ExecutionEvent{
+                           .subject = ExecutionSubject::Turn,
+                           .phase = ExecutionPhase::Started,
+                           .correlation_id = turn.correlation_id,
+                           .native_id = {},
+                           .native_type = record.native_type,
+                           .status = {},
+                           .message = {},
+                           .terminal = false,
+                       });
 }
 
 TurnState &turn_for_terminal(RecordIR &record, SessionParseResult &result,
@@ -1327,8 +1339,7 @@ TurnState &turn_for_terminal(RecordIR &record, SessionParseResult &result,
   if (!state.turn) {
     add_diagnostic(
         result, DiagnosticSeverity::Warning, DiagnosticCode::InvalidLifecycle,
-        "Codex Exec turn terminated before it was started",
-        record.source_line);
+        "Codex Exec turn terminated before it was started", record.source_line);
     return start_turn(state, true, record.source_line);
   }
   if (state.turn->terminal) {
@@ -1344,30 +1355,28 @@ void complete_turn(element root, RecordIR &record, SessionParseResult &result,
   const bool duplicate_terminal = state.turn && state.turn->terminal;
   TurnState &turn = turn_for_terminal(record, result, state);
   if (duplicate_terminal) {
-    append_event(record,
-                 ExecutionEvent{
-                     .subject = ExecutionSubject::Turn,
-                     .phase = ExecutionPhase::Unknown,
-                     .correlation_id = turn.correlation_id,
-                     .native_id = {},
-                     .native_type = record.native_type,
-                     .status = "completed",
-                     .message = {},
-                     .terminal = false,
-                 });
+    append_event(record, ExecutionEvent{
+                             .subject = ExecutionSubject::Turn,
+                             .phase = ExecutionPhase::Unknown,
+                             .correlation_id = turn.correlation_id,
+                             .native_id = {},
+                             .native_type = record.native_type,
+                             .status = "completed",
+                             .message = {},
+                             .terminal = false,
+                         });
     return;
   }
-  append_event(record,
-               ExecutionEvent{
-                   .subject = ExecutionSubject::Turn,
-                   .phase = ExecutionPhase::Completed,
-                   .correlation_id = turn.correlation_id,
-                   .native_id = {},
-                   .native_type = record.native_type,
-                   .status = "completed",
-                   .message = {},
-                   .terminal = true,
-               });
+  append_event(record, ExecutionEvent{
+                           .subject = ExecutionSubject::Turn,
+                           .phase = ExecutionPhase::Completed,
+                           .correlation_id = turn.correlation_id,
+                           .native_id = {},
+                           .native_type = record.native_type,
+                           .status = "completed",
+                           .message = {},
+                           .terminal = true,
+                       });
   append_turn_usage(root, record, result);
   turn.active = false;
   turn.terminal = true;
@@ -1377,53 +1386,47 @@ void fail_turn(element root, RecordIR &record, SessionParseResult &result,
                ParserState &state) {
   const bool duplicate_terminal = state.turn && state.turn->terminal;
   TurnState &turn = turn_for_terminal(record, result, state);
-  const std::string message =
-      record_error_message(root, result, record, true);
+  const std::string message = record_error_message(root, result, record, true);
   if (duplicate_terminal) {
-    append_event(record,
-                 ExecutionEvent{
-                     .subject = ExecutionSubject::Turn,
-                     .phase = ExecutionPhase::Unknown,
-                     .correlation_id = turn.correlation_id,
-                     .native_id = {},
-                     .native_type = record.native_type,
-                     .status = "failed",
-                     .message = message,
-                     .terminal = false,
-                 });
+    append_event(record, ExecutionEvent{
+                             .subject = ExecutionSubject::Turn,
+                             .phase = ExecutionPhase::Unknown,
+                             .correlation_id = turn.correlation_id,
+                             .native_id = {},
+                             .native_type = record.native_type,
+                             .status = "failed",
+                             .message = message,
+                             .terminal = false,
+                         });
     return;
   }
-  append_event(record,
-               ExecutionEvent{
-                   .subject = ExecutionSubject::Turn,
-                   .phase = ExecutionPhase::Failed,
-                   .correlation_id = turn.correlation_id,
-                   .native_id = {},
-                   .native_type = record.native_type,
-                   .status = "failed",
-                   .message = message,
-                   .terminal = true,
-               });
+  append_event(record, ExecutionEvent{
+                           .subject = ExecutionSubject::Turn,
+                           .phase = ExecutionPhase::Failed,
+                           .correlation_id = turn.correlation_id,
+                           .native_id = {},
+                           .native_type = record.native_type,
+                           .status = "failed",
+                           .message = message,
+                           .terminal = true,
+                       });
   turn.active = false;
   turn.terminal = true;
 }
 
 void append_stream_error(element root, RecordIR &record,
-                         SessionParseResult &result,
-                         const ParserState &state) {
-  const std::string message =
-      record_error_message(root, result, record, false);
-  append_event(record,
-               ExecutionEvent{
-                   .subject = ExecutionSubject::Stream,
-                   .phase = ExecutionPhase::Error,
-                   .correlation_id = run_correlation(state),
-                   .native_id = {},
-                   .native_type = record.native_type,
-                   .status = "error",
-                   .message = message,
-                   .terminal = false,
-               });
+                         SessionParseResult &result, const ParserState &state) {
+  const std::string message = record_error_message(root, result, record, false);
+  append_event(record, ExecutionEvent{
+                           .subject = ExecutionSubject::Stream,
+                           .phase = ExecutionPhase::Error,
+                           .correlation_id = run_correlation(state),
+                           .native_id = {},
+                           .native_type = record.native_type,
+                           .status = "error",
+                           .message = message,
+                           .terminal = false,
+                       });
 }
 
 } // namespace
@@ -1446,11 +1449,11 @@ SessionParseResult parse_codex_exec_stream(std::string_view content) {
     if (parse_error) {
       result.session.records.push_back(
           make_invalid_record(line.sequence, line.source_line, line.raw));
-      add_diagnostic(
-          result, DiagnosticSeverity::Error, DiagnosticCode::InvalidJson,
-          "invalid JSON in Codex Exec stream: "
-              + std::string{simdjson::error_message(parse_error)},
-          line.source_line);
+      add_diagnostic(result, DiagnosticSeverity::Error,
+                     DiagnosticCode::InvalidJson,
+                     "invalid JSON in Codex Exec stream: "
+                         + std::string{simdjson::error_message(parse_error)},
+                     line.source_line);
       continue;
     }
 
@@ -1458,10 +1461,9 @@ SessionParseResult parse_codex_exec_stream(std::string_view content) {
       RecordIR record = make_record(line, "non_object");
       append_event(record, UnknownEvent{.native_type = "non_object"});
       result.session.records.push_back(std::move(record));
-      add_diagnostic(result, DiagnosticSeverity::Error,
-                     DiagnosticCode::ExpectedObject,
-                     "Codex Exec JSONL record must be an object",
-                     line.source_line);
+      add_diagnostic(
+          result, DiagnosticSeverity::Error, DiagnosticCode::ExpectedObject,
+          "Codex Exec JSONL record must be an object", line.source_line);
       continue;
     }
 
@@ -1487,10 +1489,9 @@ SessionParseResult parse_codex_exec_stream(std::string_view content) {
 
     if (!is_known_record_type(native_type)) {
       append_event(record, UnknownEvent{
-                               .native_type =
-                                   native_type.empty()
-                                       ? std::string{"unknown"}
-                                       : native_type,
+                               .native_type = native_type.empty()
+                                                ? std::string{"unknown"}
+                                                : native_type,
                            });
       result.session.records.push_back(std::move(record));
       continue;
@@ -1518,9 +1519,9 @@ SessionParseResult parse_codex_exec_stream(std::string_view content) {
   }
 
   if (!result.session.records.empty() && recognized_records == 0) {
-    add_diagnostic(
-        result, DiagnosticSeverity::Fatal, DiagnosticCode::FormatMismatch,
-        "input does not contain recognizable Codex Exec records");
+    add_diagnostic(result, DiagnosticSeverity::Fatal,
+                   DiagnosticCode::FormatMismatch,
+                   "input does not contain recognizable Codex Exec records");
   }
 
   return result;
