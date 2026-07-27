@@ -102,19 +102,28 @@ jobs:
           path: ${{ env.CPM_SOURCE_CACHE }}
           key: windows-msvc-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
 
+      - name: Set up MSVC toolchain
+        uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
+        with:
+          arch: x64
+
+      - name: Install Ninja
+        run: choco install ninja --yes --no-progress
+
       - name: Configure
         shell: pwsh
         run: |
-          cmake -S . -B build -A x64 `
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
             -DCPM_SOURCE_CACHE="$env:CPM_SOURCE_CACHE" `
             -DLoupe_ENABLE_UNIT_TESTING=ON
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
       - name: Test
-        run: ctest --test-dir build --build-config Release --output-on-failure
+        run: ctest --test-dir build --output-on-failure
 
       - name: Verify and package
         shell: pwsh

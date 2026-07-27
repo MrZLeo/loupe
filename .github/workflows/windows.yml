@@ -26,16 +26,24 @@ jobs:
         path: ${{ env.CPM_SOURCE_CACHE }}
         key: ${{ runner.os }}-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
 
+    - name: set up msvc toolchain
+      uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
+      with:
+        arch: x64
+
+    - name: install ninja
+      run: choco install ninja --yes --no-progress
+
     - name: configure
-      run: cmake -Bbuild -DCMAKE_INSTALL_PREFIX="$HOME/$env:INSTALL_LOCATION" -DCPM_SOURCE_CACHE="$env:CPM_SOURCE_CACHE"
+      run: cmake -Bbuild -G Ninja -DCMAKE_BUILD_TYPE="$env:BUILD_TYPE" -DCMAKE_INSTALL_PREFIX="$HOME/$env:INSTALL_LOCATION" -DCPM_SOURCE_CACHE="$env:CPM_SOURCE_CACHE"
       
     - name: build
-      run: cmake --build build --config "$env:BUILD_TYPE" -j4
+      run: cmake --build build -j4
 
     - name: run tests
       run: |
         cd build
-        ctest -C "$env:BUILD_TYPE" -VV
+        ctest -VV
 
     - name: install project
-      run: cmake --build build --target install --config Release 
+      run: cmake --build build --target install 
