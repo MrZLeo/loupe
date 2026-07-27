@@ -1652,23 +1652,30 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
       text("  " + cursor) | color(Color::GrayLight),
       text("  " + std::string{loupe::log_format_name(state.format)})
           | color(Color::GrayLight),
-      // Variable-length items shrink first when the bar runs out of
-      // width, keeping the counts and format readable.
-      text("  " + short_path(state.path)) | color(Color::GrayLight)
-          | xflex_shrink,
+      // The filename identifies the open log; keep it whole and let the
+      // optional trailers (inline error, status, search) shrink instead.
+      text("  " + short_path(state.path)) | color(Color::GrayLight),
   };
 
   if (!state.parsed.errors.empty()) {
+    status_items.push_back(text(" "));
     Element diagnostics_count =
-        text("  " + std::to_string(state.parsed.errors.size()) + " diagnostics")
+        text(" "
+             + pluralize(state.parsed.errors.size(), "diagnostic",
+                         "diagnostics")
+             + " ")
         | color(Color::YellowLight);
     if (state.show_diagnostics) {
       diagnostics_count = diagnostics_count | inverted;
     }
     status_items.push_back(std::move(diagnostics_count));
-    status_items.push_back(
-        text("  " + clipped_label(state.parsed.errors.front()))
-        | color(Color::YellowLight) | xflex_shrink);
+    if (!state.show_diagnostics) {
+      // The open diagnostics view already shows every error in full, so
+      // only trail the first one while the view is closed.
+      status_items.push_back(
+          text("  " + clipped_label(state.parsed.errors.front()))
+          | color(Color::YellowLight) | xflex_shrink);
+    }
   }
   if (!state.status.empty()) {
     status_items.push_back(text("  " + state.status)
