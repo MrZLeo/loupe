@@ -17,8 +17,10 @@ TEST_CASE("parse explicit log format names", "[session_ir]") {
   REQUIRE(loupe::parse_log_format("claudecode")
           == loupe::LogFormat::ClaudeCode);
   REQUIRE(loupe::parse_log_format("generic") == loupe::LogFormat::Generic);
-  REQUIRE_FALSE(loupe::parse_log_format("auto").has_value());
+  REQUIRE(loupe::parse_log_format("auto") == loupe::LogFormat::Auto);
+  REQUIRE_FALSE(loupe::parse_log_format("yaml").has_value());
   REQUIRE(loupe::log_format_name(loupe::LogFormat::CodexExec) == "codex-exec");
+  REQUIRE(loupe::log_format_name(loupe::LogFormat::Auto) == "auto");
 }
 
 TEST_CASE("select active branch from parent-linked records", "[session_ir]") {

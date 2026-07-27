@@ -12,6 +12,8 @@ enum class LogFormat {
   ClaudeCode,
   Generic,
   CodexExec,
+  // Not an input format: ask the detector to classify the content.
+  Auto,
 };
 
 std::optional<LogFormat> parse_log_format(std::string_view value);

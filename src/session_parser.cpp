@@ -1,5 +1,6 @@
 #include "loupe/session_parser.hpp"
 
+#include "loupe/format_detector.hpp"
 #include "loupe/log_parser.hpp"
 
 #include "session_parser_internal.hpp"
@@ -149,6 +150,20 @@ DiagnosticIdentity diagnostic_identity(const Diagnostic &diagnostic) {
 SessionParseResult
 parse_session_content(std::string_view content, LogFormat format) {
   SessionParseResult result;
+  bool detection_succeeded = false;
+  if (format == LogFormat::Auto) {
+    const std::optional<LogFormat> detected = detect_log_format(content);
+    if (detected.has_value()) {
+      format = *detected;
+      detection_succeeded = true;
+    } else {
+      result.session.format = LogFormat::Auto;
+      detail::add_diagnostic(
+          result, DiagnosticSeverity::Fatal, DiagnosticCode::FormatMismatch,
+          "could not detect the log format; specify it with --format "
+          "(pi, codex, codex-exec, claudecode, or generic)");
+    }
+  }
   switch (format) {
   case LogFormat::Pi:
     result = detail::parse_pi_session(content);
@@ -165,6 +180,13 @@ parse_session_content(std::string_view content, LogFormat format) {
   case LogFormat::Generic:
     result = detail::parse_generic_session(content);
     break;
+  case LogFormat::Auto:
+    break;
+  }
+  if (detection_succeeded && result.has_fatal_error()) {
+    detail::add_diagnostic(
+        result, DiagnosticSeverity::Info, DiagnosticCode::FormatMismatch,
+        "content was auto-detected; pass --format to override");
   }
 
   auto validation = validate_session(result.session);

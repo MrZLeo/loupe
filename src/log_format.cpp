@@ -18,6 +18,9 @@ std::optional<LogFormat> parse_log_format(std::string_view value) {
   if (value == "generic") {
     return LogFormat::Generic;
   }
+  if (value == "auto") {
+    return LogFormat::Auto;
+  }
   return std::nullopt;
 }
 
@@ -33,6 +36,8 @@ std::string_view log_format_name(LogFormat format) {
     return "claudecode";
   case LogFormat::Generic:
     return "generic";
+  case LogFormat::Auto:
+    return "auto";
   }
   return "unknown";
 }

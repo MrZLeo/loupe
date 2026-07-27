@@ -2,6 +2,7 @@ set(sources
   src/claudecode_parser.cpp
   src/codex_exec_parser.cpp
   src/codex_parser.cpp
+  src/format_detector.cpp
   src/jsonl_reader.cpp
   src/log_format.cpp
   src/log_parser.cpp
@@ -25,6 +26,7 @@ set(exe_sources
 )
 
 set(headers
+  include/loupe/format_detector.hpp
   include/loupe/log_format.hpp
   include/loupe/log_message.hpp
   include/loupe/log_parser.hpp
@@ -41,6 +43,7 @@ set(headers
 set(test_sources
   src/codex_exec_parser_test.cpp
   src/codex_parser_test.cpp
+  src/format_detector_test.cpp
   src/log_parser_test.cpp
   src/message_projection_test.cpp
   src/line_frame_test.cpp
