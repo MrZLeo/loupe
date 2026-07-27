@@ -159,4 +159,6 @@ tar -xzf loupe-v0.2.0-linux-x86_64.tar.gz
 
 ## License
 
-Loupe is distributed under the terms in [LICENSE](LICENSE).
+Loupe is distributed under the terms in [LICENSE](LICENSE). The bundled
+third-party libraries remain under their own licenses, reproduced in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

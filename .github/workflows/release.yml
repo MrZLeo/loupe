@@ -74,7 +74,8 @@ jobs:
           archive="loupe-${RELEASE_VERSION}-linux-x86_64.tar.gz"
           mkdir -p dist package
           install -m 0755 "$binary" package/loupe
-          tar -C package -czf "dist/${archive}" loupe
+          install -m 0644 THIRD_PARTY_LICENSES.md package/THIRD_PARTY_LICENSES.md
+          tar -C package -czf "dist/${archive}" loupe THIRD_PARTY_LICENSES.md
 
           extracted="$(mktemp -d)"
           tar -C "$extracted" -xzf "dist/${archive}"
@@ -158,7 +159,8 @@ jobs:
           $archive = "loupe-$env:RELEASE_VERSION-windows-x86_64.zip"
           New-Item -ItemType Directory -Force dist, package | Out-Null
           Copy-Item $binary package/loupe.exe
-          Compress-Archive -Path package/loupe.exe -DestinationPath "dist/$archive"
+          Copy-Item THIRD_PARTY_LICENSES.md package/THIRD_PARTY_LICENSES.md
+          Compress-Archive -Path package/loupe.exe, package/THIRD_PARTY_LICENSES.md -DestinationPath "dist/$archive"
 
           $extracted = Join-Path $env:RUNNER_TEMP "loupe-release-check"
           Expand-Archive -Path "dist/$archive" -DestinationPath $extracted
@@ -232,7 +234,8 @@ jobs:
           archive="loupe-${RELEASE_VERSION}-macos-universal.tar.gz"
           mkdir -p dist package
           install -m 0755 "$binary" package/loupe
-          tar -C package -czf "dist/${archive}" loupe
+          install -m 0644 THIRD_PARTY_LICENSES.md package/THIRD_PARTY_LICENSES.md
+          tar -C package -czf "dist/${archive}" loupe THIRD_PARTY_LICENSES.md
 
           extracted="$(mktemp -d)"
           tar -C "$extracted" -xzf "dist/${archive}"
