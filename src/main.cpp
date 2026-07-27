@@ -148,14 +148,14 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                  }));
   parser.add(Argum::Option("--format", "-f")
                  .help("log format: pi, codex, codex-exec, claudecode, or "
-                       "generic")
+                       "generic (default: auto-detect)")
                  .handler([&](const std::string_view &value) {
                    result.options.format = loupe::parse_log_format(value);
                    if (!result.options.format) {
                      result.format_error = "unsupported log format: "
                          + std::string{value}
-                         + " (expected pi, codex, codex-exec, claudecode, or "
-                           "generic)";
+                         + " (expected pi, codex, codex-exec, claudecode, "
+                           "generic, or auto)";
                    }
                  }));
 
@@ -183,12 +183,9 @@ CliParseResult parse_cli_args(int argc, char **argv) {
     result.exit_code = EXIT_FAILURE;
     return result;
   }
+  // Without --format, each opened log is auto-detected on load.
   if (!result.options.format) {
-    std::cerr << "error: --format is required "
-                 "(pi, codex, codex-exec, claudecode, or generic)\n";
-    std::cerr << parser.formatUsage(program_name) << '\n';
-    result.exit_code = EXIT_FAILURE;
-    return result;
+    result.options.format = loupe::LogFormat::Auto;
   }
 
   result.run = true;
@@ -551,7 +548,9 @@ load_viewer_state(const std::filesystem::path &path, loupe::LogFormat format) {
   parsed.diagnostics = session.diagnostics;
   AppState loaded;
   loaded.path = path;
-  loaded.format = format;
+  // Surface the effective format (relevant when Auto resolved it), so the
+  // status line and reload both use what actually parsed the file.
+  loaded.format = session.session.format;
   // A fatal log has no trustworthy transcript; open on the diagnostics.
   loaded.show_diagnostics = session.has_fatal_error();
   loaded.session = std::move(session);
