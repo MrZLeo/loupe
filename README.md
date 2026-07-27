@@ -4,6 +4,10 @@ Loupe is a terminal viewer for coding-agent session logs. It parses each
 provider's native JSONL into a common, loss-aware intermediate representation
 and projects that representation into the existing message UI.
 
+<p align="center">
+  <img src="docs/promo.gif" alt="loupe browsing and inspecting mixed-format session logs" width="900">
+</p>
+
 ## Supported formats
 
 Loupe auto-detects the format of each opened log: the native formats use
