@@ -6,11 +6,15 @@ and projects that representation into the existing message UI.
 
 ## Supported formats
 
-The input format is always explicit. Loupe does not guess from file contents or
-paths.
+Loupe auto-detects the format of each opened log: the native formats use
+disjoint record-type vocabularies, so scanning the first records is enough
+to classify them. `--format` overrides detection, and detection never
+selects the lossy `generic` path — unclassifiable content fails with a
+fatal diagnostic asking for an explicit `--format`.
 
 | `--format` | Input |
 | --- | --- |
+| `auto` (default) | Detect `pi`, `codex`, `codex-exec`, or `claudecode` from the first records |
 | `pi` | Pi session JSONL, including parent-linked branches |
 | `codex` | Codex session rollout JSONL |
 | `codex-exec` | `codex exec --json` event-stream JSONL |
@@ -18,21 +22,23 @@ paths.
 | `generic` | Loupe's legacy generic JSON/JSONL parser |
 
 ```sh
-loupe --format pi ~/.pi/agent/sessions/.../session.jsonl
-loupe --format codex ~/.codex/sessions/2026/07/23/rollout-....jsonl
+loupe ~/.pi/agent/sessions/.../session.jsonl
+loupe ~/.codex/sessions/2026/07/23/rollout-....jsonl
 codex exec --json "summarize this repository" > codex-exec.jsonl
-loupe --format codex-exec codex-exec.jsonl
-loupe --format claudecode ~/.claude/projects/.../session.jsonl
+loupe codex-exec.jsonl
+loupe ~/.claude/projects/.../session.jsonl
 ```
 
 `codex` and `codex-exec` are separate formats. The former reads the persisted
 session rollout, while the latter reads the machine-readable stdout event
 stream produced by `codex exec --json`.
 
-A directory can be opened instead of a file. The selected format is then
-applied to every file opened from the browser:
+A directory can be opened instead of a file. With the default auto-detection,
+each file opened from the browser is classified independently; an explicit
+`--format` applies to all of them:
 
 ```sh
+loupe ~/.codex/sessions
 loupe --format codex ~/.codex/sessions
 ```
 
