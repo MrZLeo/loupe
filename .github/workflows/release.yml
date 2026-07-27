@@ -20,10 +20,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache CPM dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
           key: linux-glibc-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
@@ -82,7 +82,7 @@ jobs:
           "$extracted/loupe" --version
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: loupe-${{ env.RELEASE_VERSION }}-linux-x86_64
           path: dist/loupe-${{ env.RELEASE_VERSION }}-linux-x86_64.tar.gz
@@ -94,10 +94,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache CPM dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
           key: windows-msvc-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
@@ -167,7 +167,7 @@ jobs:
           & "$extracted/loupe.exe" --version
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: loupe-${{ env.RELEASE_VERSION }}-windows-x86_64
           path: dist/loupe-${{ env.RELEASE_VERSION }}-windows-x86_64.zip
@@ -179,10 +179,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache CPM dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
           key: macos-universal-cpm-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'test/**') }}
@@ -242,7 +242,7 @@ jobs:
           "$extracted/loupe" --version
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: loupe-${{ env.RELEASE_VERSION }}-macos-universal
           path: dist/loupe-${{ env.RELEASE_VERSION }}-macos-universal.tar.gz
@@ -261,7 +261,7 @@ jobs:
 
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: loupe-${{ env.RELEASE_VERSION }}-*
           path: dist
