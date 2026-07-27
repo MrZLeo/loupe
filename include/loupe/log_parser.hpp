@@ -7,11 +7,15 @@
 #include <vector>
 
 #include "loupe/log_message.hpp"
+#include "loupe/session_ir.hpp"
 
 namespace loupe {
 struct ParseResult {
   std::vector<LogMessage> messages;
   std::vector<std::string> errors;
+  // Structured view of the same diagnostics flattened into `errors`, so
+  // the UI can render severity and source line separately.
+  std::vector<Diagnostic> diagnostics;
 };
 
 ParseResult parse_log_content(std::string_view content);

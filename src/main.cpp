@@ -235,6 +235,19 @@ std::string clipped_label(std::string_view text) {
   return std::string{text.substr(0, kMaxLabelLength - 3)} + "...";
 }
 
+ftxui::Color diagnostic_color(loupe::DiagnosticSeverity severity) {
+  switch (severity) {
+  case loupe::DiagnosticSeverity::Warning:
+    return ftxui::Color::YellowLight;
+  case loupe::DiagnosticSeverity::Error:
+  case loupe::DiagnosticSeverity::Fatal:
+    return ftxui::Color::RedLight;
+  case loupe::DiagnosticSeverity::Info:
+  default:
+    return ftxui::Color::GrayLight;
+  }
+}
+
 std::string lowercase_copy(std::string_view text) {
   std::string out;
   out.reserve(text.size());
@@ -535,9 +548,12 @@ load_viewer_state(const std::filesystem::path &path, loupe::LogFormat format) {
   for (const auto &diagnostic : session.diagnostics) {
     parsed.errors.push_back(loupe::format_diagnostic(diagnostic));
   }
+  parsed.diagnostics = session.diagnostics;
   AppState loaded;
   loaded.path = path;
   loaded.format = format;
+  // A fatal log has no trustworthy transcript; open on the diagnostics.
+  loaded.show_diagnostics = session.has_fatal_error();
   loaded.session = std::move(session);
   loaded.parsed = std::move(parsed);
   return loaded;
@@ -1037,7 +1053,9 @@ void reload(AppState &state) {
   AppState loaded = load_viewer_state(state.path, state.format);
   state.session = std::move(loaded.session);
   state.parsed = std::move(loaded.parsed);
-  if (state.parsed.errors.empty()) {
+  if (state.session.has_fatal_error()) {
+    state.show_diagnostics = true;
+  } else if (state.parsed.errors.empty()) {
     state.show_diagnostics = false;
   }
   state.lines_width = -1; // Force a display-line rebuild.
@@ -1447,10 +1465,36 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
 
   Elements rows;
   if (state.show_diagnostics) {
-    rows.push_back(text("Diagnostics") | bold | color(Color::YellowLight));
+    // Structured counterpart of the status line's one-line summary: the
+    // full list with severity and source line broken out, complete
+    // messages, and a fatal banner when the transcript was withheld.
+    const bool has_fatal = state.session.has_fatal_error();
+    std::string heading =
+        pluralize(state.parsed.errors.size(), "diagnostic", "diagnostics");
+    if (has_fatal) {
+      heading += " \u2014 parsing stopped; transcript withheld";
+    }
+    rows.push_back(text(std::move(heading))
+                   | bold
+                   | color(has_fatal ? Color::RedLight : Color::YellowLight));
     rows.push_back(separatorEmpty());
-    for (const auto &error : state.parsed.errors) {
-      rows.push_back(paragraph(error) | color(Color::YellowLight));
+    for (const auto &diagnostic : state.parsed.diagnostics) {
+      const Color entry_color = diagnostic_color(diagnostic.severity);
+      const bool fatal =
+          diagnostic.severity == loupe::DiagnosticSeverity::Fatal;
+      Element severity = text(loupe::severity_name(diagnostic.severity))
+                         | color(entry_color) | size(WIDTH, EQUAL, 9);
+      if (fatal) {
+        severity = severity | bold;
+      }
+      rows.push_back(hbox({
+          std::move(severity),
+          text(diagnostic.source_line > 0
+                   ? "line " + std::to_string(diagnostic.source_line)
+                   : "")
+              | color(entry_color) | size(WIDTH, EQUAL, 10),
+          paragraph(diagnostic.message) | color(entry_color) | xflex,
+      }));
       rows.push_back(separatorEmpty());
     }
   } else if (state.parsed.messages.empty()) {

@@ -24,6 +24,8 @@ make_display_messages(const SessionIR &session,
 
 std::string format_diagnostic(const Diagnostic &diagnostic);
 
+std::string severity_name(DiagnosticSeverity severity);
+
 } // namespace loupe
 
 #endif // LOUPE_MESSAGE_PROJECTION_HPP_

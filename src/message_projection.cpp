@@ -188,20 +188,6 @@ LogMessage make_message(const MessageEvent &message, const EventIR &event,
   };
 }
 
-std::string severity_name(DiagnosticSeverity severity) {
-  switch (severity) {
-  case DiagnosticSeverity::Info:
-    return "info";
-  case DiagnosticSeverity::Warning:
-    return "warning";
-  case DiagnosticSeverity::Error:
-    return "error";
-  case DiagnosticSeverity::Fatal:
-    return "fatal";
-  }
-  return "warning";
-}
-
 std::string todo_list_checklist(const std::string &json) {
   simdjson::dom::parser parser;
   simdjson::padded_string padded{json};
@@ -232,6 +218,20 @@ std::string todo_list_checklist(const std::string &json) {
 }
 
 } // namespace
+
+std::string severity_name(DiagnosticSeverity severity) {
+  switch (severity) {
+  case DiagnosticSeverity::Info:
+    return "info";
+  case DiagnosticSeverity::Warning:
+    return "warning";
+  case DiagnosticSeverity::Error:
+    return "error";
+  case DiagnosticSeverity::Fatal:
+    return "fatal";
+  }
+  return "warning";
+}
 
 std::vector<LogMessage>
 make_display_messages(const SessionIR &session, const DisplayOptions &options) {
