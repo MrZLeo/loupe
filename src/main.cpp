@@ -31,6 +31,7 @@
 #include "loupe/structured_text.hpp"
 #include "loupe/synchronized_output.hpp"
 #include "loupe/version.hpp"
+#include "message_overview.hpp"
 
 namespace {
 struct CliOptions {
@@ -77,6 +78,8 @@ struct AppState {
   std::vector<DisplayLine> display_lines;
   std::vector<std::pair<std::size_t, std::size_t>> message_rows;
   int lines_width{-1};
+  std::optional<std::size_t> overview_hovered;
+  ftxui::Box overview_box;
 };
 
 struct BrowserEntry {
@@ -190,22 +193,6 @@ CliParseResult parse_cli_args(int argc, char **argv) {
 
   result.run = true;
   return result;
-}
-
-ftxui::Color role_color(std::string_view role) {
-  if (role == "user") {
-    return ftxui::Color::MagentaLight;
-  }
-  if (role == "assistant") {
-    return ftxui::Color::GreenLight;
-  }
-  if (role == "system") {
-    return ftxui::Color::CyanLight;
-  }
-  if (role == "tool") {
-    return ftxui::Color::YellowLight;
-  }
-  return ftxui::Color::GrayLight;
 }
 
 std::string short_path(const std::filesystem::path &path) {
@@ -1062,6 +1049,7 @@ void reload(AppState &state) {
     state.show_diagnostics = false;
   }
   state.lines_width = -1; // Force a display-line rebuild.
+  state.overview_hovered.reset();
   clamp_selection(state);
   if (!state.search_query.empty()) {
     jump_to_search_match(state, loupe::SearchDirection::Forward, true);
@@ -1076,6 +1064,7 @@ void open_diagnostics(AppState &state) {
     return;
   }
   state.show_diagnostics = true;
+  state.overview_hovered.reset();
   state.status.clear();
   state.scroll.follow_focus = false;
   state.scroll.top_row = 0;
@@ -1135,7 +1124,7 @@ append_message_display_lines(const loupe::LogMessage &message,
   DisplayLine header{
       StyledSegment{
           .text = message.role,
-          .color = role_color(message.role),
+          .color = loupe::message_role_color(message.role),
           .bold = true,
       },
   };
@@ -1209,8 +1198,8 @@ bool ensure_display_lines(AppState &state) {
   state.lines_width = terminal_width;
   state.display_lines.clear();
   state.message_rows.clear();
-  const std::size_t wrap_width =
-      static_cast<std::size_t>(std::max(16, terminal_width - 2));
+  const std::size_t wrap_width = static_cast<std::size_t>(
+      std::max(16, terminal_width - loupe::kMessageOverviewWidth - 3));
   for (const loupe::LogMessage &message : state.parsed.messages) {
     const std::size_t first_row = state.display_lines.size();
     append_message_display_lines(message, wrap_width, state.display_lines);
@@ -1325,6 +1314,38 @@ void sync_selection_to_viewport(AppState &state) {
     ++owner;
   }
   state.selected = owner;
+}
+
+bool handle_message_overview_mouse(AppState &state, ftxui::Event &event) {
+  if (!event.is_mouse()) {
+    return false;
+  }
+  if (state.show_diagnostics || state.parsed.messages.empty()) {
+    state.overview_hovered.reset();
+    return false;
+  }
+
+  const auto hovered = loupe::message_overview_index_at(
+      state.overview_box, state.parsed.messages.size(), event.mouse().x,
+      event.mouse().y);
+  state.overview_hovered = hovered;
+  if (!hovered.has_value()) {
+    return false;
+  }
+
+  if (event.mouse().button == ftxui::Mouse::Left) {
+    if (event.mouse().motion == ftxui::Mouse::Pressed) {
+      state.selected = *hovered;
+      loupe::follow_selection(state.scroll);
+      state.status.clear();
+      return true;
+    }
+    if (event.mouse().motion == ftxui::Mouse::Released) {
+      return true;
+    }
+  }
+
+  return event.mouse().motion == ftxui::Mouse::Moved;
 }
 
 ftxui::Element render_errors(const std::vector<std::string> &errors) {
@@ -1609,7 +1630,7 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
                               visible_search_query, current_search_match);
       if (selected_message && row == selection_bar_row) {
         message_elements.push_back(hbox({
-            text("▌") | color(role_color(message.role)),
+            text("▌") | color(loupe::message_role_color(message.role)),
             text(" "),
             std::move(line_element),
         }));
@@ -1706,18 +1727,51 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
                              | color(Color::GrayDark),
                      })
                    : text(help_text) | color(Color::GrayDark);
-  Element footer = hbox({
-      help | flex,
-      text(" "),
-      loupe::scroll_progress_indicator(state.scroll) | color(Color::GrayLight),
-  });
+
+  const bool show_message_overview =
+      !state.show_diagnostics && !state.parsed.messages.empty();
+  Elements footer_items{help | flex};
+  if (show_message_overview
+      && state.overview_hovered.has_value()
+      && *state.overview_hovered < state.parsed.messages.size()) {
+    const std::size_t hovered = *state.overview_hovered;
+    const loupe::LogMessage &message = state.parsed.messages[hovered];
+    footer_items.push_back(text(" "
+                                + message.role
+                                + " "
+                                + std::to_string(hovered + 1)
+                                + "/"
+                                + std::to_string(state.parsed.messages.size())
+                                + "  click jump ")
+                           | bold
+                           | color(loupe::message_role_color(message.role)));
+  }
+  footer_items.push_back(text(" "));
+  footer_items.push_back(loupe::scroll_progress_indicator(state.scroll)
+                         | color(Color::GrayLight));
+  Element footer = hbox(std::move(footer_items));
+
+  Element scroll_content = vbox(std::move(rows));
+  if (!show_message_overview) {
+    scroll_content = std::move(scroll_content) | vscroll_indicator;
+  }
+  Element body =
+      loupe::line_frame(std::move(scroll_content), state.scroll) | flex;
+  if (show_message_overview) {
+    body =
+        hbox({
+            std::move(body) | flex,
+            separatorEmpty(),
+            loupe::message_overview(state.parsed.messages, state.selected,
+                                    state.overview_hovered, state.overview_box),
+        })
+        | flex;
+  }
 
   return vbox({
              hbox(std::move(status_items)),
              separatorEmpty(),
-             loupe::line_frame(vbox(std::move(rows)) | vscroll_indicator,
-                               state.scroll)
-                 | flex,
+             std::move(body),
              separatorEmpty(),
              footer,
          })
@@ -1756,6 +1810,9 @@ bool handle_search_event(AppState &state, const ftxui::Event &event) {
 
 bool
 handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
+  if (handle_message_overview_mouse(state, event)) {
+    return true;
+  }
   if (const int rows = wheel_rows(event); rows != 0) {
     if (state.show_diagnostics) {
       loupe::scroll_by_rows(state.scroll, rows);

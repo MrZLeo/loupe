@@ -22,6 +22,8 @@ set(exe_sources
   src/main.cpp
   src/line_frame.cpp
   src/line_frame.hpp
+  src/message_overview.cpp
+  src/message_overview.hpp
   ${sources}
 )
 
@@ -46,6 +48,7 @@ set(test_sources
   src/format_detector_test.cpp
   src/log_parser_test.cpp
   src/message_projection_test.cpp
+  src/message_overview_test.cpp
   src/line_frame_test.cpp
   src/markdown_text_test.cpp
   src/pi_parser_test.cpp

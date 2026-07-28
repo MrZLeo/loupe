@@ -150,6 +150,8 @@ tar -xzf loupe-v0.3.0-linux-x86_64.tar.gz
 - Mouse wheel / touchpad scroll: move the viewport by line; the topmost
   visible message becomes the current one, and its role header stays pinned
   to the top of the screen while its body scrolls
+- Move the mouse over the role-colored overview bars on the right to inspect
+  the transcript; click a bar to jump directly to that message
 - `/`: filter files or search the current log
 - `n` / `N`: move between matches in the current log
 - `r`: reload the current log with the same explicit format

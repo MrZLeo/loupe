@@ -100,6 +100,22 @@ foreach(file ${test_sources})
       PRIVATE
         ftxui::dom
     )
+  elseif(test_name STREQUAL "message_overview_test")
+    target_sources(
+      ${test_name}_Tests
+      PRIVATE
+        "${CMAKE_SOURCE_DIR}/src/message_overview.cpp"
+    )
+    target_include_directories(
+      ${test_name}_Tests
+      PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+    )
+    target_link_libraries(
+      ${test_name}_Tests
+      PRIVATE
+        ftxui::dom
+    )
   endif()
 
   catch_discover_tests(${test_name}_Tests)
