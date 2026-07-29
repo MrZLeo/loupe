@@ -14,8 +14,39 @@ env:
   RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}
 
 jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag matches the project version
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: release tag must be a stable semantic version (vX.Y.Z)" >&2
+            exit 1
+          fi
+
+          project_version="$(
+            awk '$1 == "VERSION" { print $2; exit }' CMakeLists.txt
+          )"
+          if [[ "$RELEASE_TAG" != "v${project_version}" ]]; then
+            echo "error: tag ${RELEASE_TAG} does not match project version v${project_version}" >&2
+            exit 1
+          fi
+
   linux:
     name: Linux x86_64
+    needs: validate
     runs-on: ubuntu-24.04
 
     steps:
@@ -74,11 +105,15 @@ jobs:
           archive="loupe-${RELEASE_VERSION}-linux-x86_64.tar.gz"
           mkdir -p dist package
           install -m 0755 "$binary" package/loupe
+          install -m 0644 LICENSE package/LICENSE
           install -m 0644 THIRD_PARTY_LICENSES.md package/THIRD_PARTY_LICENSES.md
-          tar -C package -czf "dist/${archive}" loupe THIRD_PARTY_LICENSES.md
+          tar -C package -czf "dist/${archive}" \
+            loupe LICENSE THIRD_PARTY_LICENSES.md
 
           extracted="$(mktemp -d)"
           tar -C "$extracted" -xzf "dist/${archive}"
+          test -f "$extracted/LICENSE"
+          test -f "$extracted/THIRD_PARTY_LICENSES.md"
           "$extracted/loupe" --version
 
       - name: Upload artifact
@@ -90,6 +125,7 @@ jobs:
 
   windows:
     name: Windows x86_64
+    needs: validate
     runs-on: windows-2022
 
     steps:
@@ -168,11 +204,20 @@ jobs:
           $archive = "loupe-$env:RELEASE_VERSION-windows-x86_64.zip"
           New-Item -ItemType Directory -Force dist, package | Out-Null
           Copy-Item $binary package/loupe.exe
+          Copy-Item LICENSE package/LICENSE
           Copy-Item THIRD_PARTY_LICENSES.md package/THIRD_PARTY_LICENSES.md
-          Compress-Archive -Path package/loupe.exe, package/THIRD_PARTY_LICENSES.md -DestinationPath "dist/$archive"
+          Compress-Archive `
+            -Path package/loupe.exe, package/LICENSE, package/THIRD_PARTY_LICENSES.md `
+            -DestinationPath "dist/$archive"
 
           $extracted = Join-Path $env:RUNNER_TEMP "loupe-release-check"
           Expand-Archive -Path "dist/$archive" -DestinationPath $extracted
+          if (-not (Test-Path "$extracted/LICENSE")) {
+            throw "Release archive is missing LICENSE"
+          }
+          if (-not (Test-Path "$extracted/THIRD_PARTY_LICENSES.md")) {
+            throw "Release archive is missing THIRD_PARTY_LICENSES.md"
+          }
           & "$extracted/loupe.exe" --version
 
       - name: Upload artifact
@@ -184,6 +229,7 @@ jobs:
 
   macos:
     name: macOS universal
+    needs: validate
     runs-on: macos-15
 
     steps:
@@ -243,11 +289,15 @@ jobs:
           archive="loupe-${RELEASE_VERSION}-macos-universal.tar.gz"
           mkdir -p dist package
           install -m 0755 "$binary" package/loupe
+          install -m 0644 LICENSE package/LICENSE
           install -m 0644 THIRD_PARTY_LICENSES.md package/THIRD_PARTY_LICENSES.md
-          tar -C package -czf "dist/${archive}" loupe THIRD_PARTY_LICENSES.md
+          tar -C package -czf "dist/${archive}" \
+            loupe LICENSE THIRD_PARTY_LICENSES.md
 
           extracted="$(mktemp -d)"
           tar -C "$extracted" -xzf "dist/${archive}"
+          test -f "$extracted/LICENSE"
+          test -f "$extracted/THIRD_PARTY_LICENSES.md"
           "$extracted/loupe" --version
 
       - name: Upload artifact
@@ -269,6 +319,11 @@ jobs:
       contents: write
 
     steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
@@ -278,20 +333,119 @@ jobs:
 
       - name: Generate checksums
         run: |
+          set -euo pipefail
+
           cd dist
           sha256sum loupe-* > SHA256SUMS
-          cat SHA256SUMS
 
-      - name: Create or update release
+      - name: Generate Homebrew Formula
+        run: |
+          set -euo pipefail
+
+          ruby packaging/homebrew/generate-formula.rb \
+            "$GITHUB_REF_NAME" \
+            dist/SHA256SUMS \
+            dist/loupe.rb
+          ruby -c dist/loupe.rb
+          (
+            cd dist
+            sha256sum loupe.rb >> SHA256SUMS
+            cat SHA256SUMS
+          )
+
+      - name: Upload Homebrew Formula artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: homebrew-formula-${{ env.RELEASE_VERSION }}
+          path: dist/loupe.rb
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           if gh release view --repo "$GH_REPO" "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload --repo "$GH_REPO" "$GITHUB_REF_NAME" dist/* --clobber
-          else
-            gh release create --repo "$GH_REPO" "$GITHUB_REF_NAME" dist/* \
-              --verify-tag \
-              --generate-notes \
-              --title "Loupe ${GITHUB_REF_NAME}"
+            echo "error: release ${GITHUB_REF_NAME} already exists; refusing to replace its assets" >&2
+            exit 1
           fi
+
+          gh release create --repo "$GH_REPO" "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --generate-notes \
+            --title "Loupe ${GITHUB_REF_NAME}"
+
+  homebrew:
+    name: Update Homebrew tap
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: homebrew-tap
+      cancel-in-progress: false
+
+    steps:
+      - name: Check publishing configuration
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$HOMEBREW_TAP_TOKEN" ]]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is required to update the Homebrew tap"
+            exit 1
+          fi
+
+      - name: Download Formula artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: homebrew-formula-${{ env.RELEASE_VERSION }}
+          path: formula
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v7
+        with:
+          repository: mrzleo/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Publish Formula
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          current_formula=homebrew-tap/Formula/loupe.rb
+          current_version=""
+          if [[ -f "$current_formula" ]]; then
+            current_version="$(
+              sed -nE \
+                's#.*releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/.*#\1#p' \
+                "$current_formula" |
+                head -n 1
+            )"
+          fi
+          if [[ -n "$current_version" ]] &&
+             [[ "$(printf '%s\n%s\n' "$current_version" "$version" |
+               sort -V | tail -n 1)" == "$current_version" ]] &&
+             [[ "$current_version" != "$version" ]]; then
+            echo "::notice::Tap already contains newer Loupe ${current_version}; skipping ${version}"
+            exit 0
+          fi
+
+          mkdir -p homebrew-tap/Formula
+          install -m 0644 formula/loupe.rb homebrew-tap/Formula/loupe.rb
+          cd homebrew-tap
+
+          git add Formula/loupe.rb
+          if git diff --cached --quiet; then
+            echo "Homebrew Formula is already current"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: update loupe to ${version}"
+          git push

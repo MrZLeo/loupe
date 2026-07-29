@@ -8,6 +8,17 @@ and projects that representation into the existing message UI.
   <img src="docs/promo.gif" alt="loupe browsing and inspecting mixed-format session logs" width="900">
 </p>
 
+## Install
+
+Install the latest release with Homebrew:
+
+```sh
+brew install mrzleo/tap/loupe
+```
+
+The Formula supports macOS 13 or newer on Apple Silicon and Intel. Pre-built
+binaries are checksummed and require no compiler or separate runtime libraries.
+
 ## Supported formats
 
 Loupe auto-detects the format of each opened log: the native formats use
@@ -133,10 +144,11 @@ a `SHA256SUMS` file:
 | Windows x86_64 | `loupe-v0.3.0-windows-x86_64.zip` | Static MSVC runtime |
 | macOS 13+ | `loupe-v0.3.0-macos-universal.tar.gz` | Universal arm64/x86_64 executable; system libraries only |
 
-Each archive contains one executable named `loupe` or `loupe.exe` and requires
-no separately installed project or C++ runtime libraries. macOS system
-libraries remain dynamically linked because macOS does not provide a supported
-fully static system runtime.
+The v0.3.0 archives contain one executable named `loupe` or `loupe.exe` and
+third-party license notices. Archives produced by the updated release workflow
+also include the project license. They require no separately installed project
+or C++ runtime libraries. macOS system libraries remain dynamically linked
+because macOS does not provide a supported fully static system runtime.
 
 ```sh
 tar -xzf loupe-v0.3.0-linux-x86_64.tar.gz

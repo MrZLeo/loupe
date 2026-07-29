@@ -1,0 +1,70 @@
+name: Homebrew
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - ".github/workflows/homebrew.yml"
+      - ".github/workflows/release.yml"
+      - "LICENSE"
+      - "packaging/homebrew/**"
+  pull_request:
+    branches: [ master ]
+    paths:
+      - ".github/workflows/homebrew.yml"
+      - ".github/workflows/release.yml"
+      - "LICENSE"
+      - "packaging/homebrew/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    name: Formula (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-15-intel
+          - macos-26
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@9af03b7ae3f9e2ae5c174f659d5c3909f7e7dbac # 2026.07.29.1
+        with:
+          token: ${{ github.token }}
+
+      - name: Test Formula generator
+        run: ruby packaging/homebrew/generate-formula-test.rb
+
+      - name: Generate known release fixture
+        run: |
+          ruby packaging/homebrew/generate-formula.rb \
+            v0.3.0 \
+            packaging/homebrew/testdata/v0.3.0-SHA256SUMS \
+            "$RUNNER_TEMP/loupe.rb"
+
+      - name: Create test tap
+        run: |
+          brew tap-new --no-git mrzleo/loupe-test
+          install -m 0644 \
+            "$RUNNER_TEMP/loupe.rb" \
+            "$(brew --repository mrzleo/loupe-test)/Formula/loupe.rb"
+
+      - name: Check Formula
+        run: |
+          brew style --formula mrzleo/loupe-test/loupe
+          brew audit --strict --formula mrzleo/loupe-test/loupe
+
+      - name: Install and test Formula
+        run: |
+          brew install mrzleo/loupe-test/loupe
+          brew test mrzleo/loupe-test/loupe
