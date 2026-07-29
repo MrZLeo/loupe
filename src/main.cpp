@@ -72,6 +72,10 @@ struct AppState {
   std::vector<std::size_t> search_matches;
   std::size_t search_origin_selected{0};
   bool show_diagnostics{false};
+  // Per-message fold state: folded[i] collapses message i to its header
+  // plus a one-line summary (see fold_summary_line). Sized to messages on
+  // load and reset on reload, since indices may shift.
+  std::vector<bool> folded;
   // Cached display lines, rebuilt when the terminal width or the messages
   // change. message_rows[i] is the [first, last) display-line range of
   // message i.
@@ -542,6 +546,7 @@ load_viewer_state(const std::filesystem::path &path, loupe::LogFormat format) {
   loaded.show_diagnostics = session.has_fatal_error();
   loaded.session = std::move(session);
   loaded.parsed = std::move(parsed);
+  loaded.folded.assign(loaded.parsed.messages.size(), false);
   return loaded;
 }
 
@@ -664,6 +669,22 @@ void append_wrapped_line(std::vector<DisplayLine> &out,
   out.push_back(std::move(line));
 }
 
+// Clip text to `width` cells at a glyph boundary.
+std::string clip_to_width(std::string_view text, std::size_t width) {
+  std::string kept;
+  std::size_t cells = 0;
+  for (const std::string &glyph : ftxui::Utf8ToGlyphs(text)) {
+    const std::size_t glyph_cells =
+        static_cast<std::size_t>(ftxui::string_width(glyph));
+    if (cells + glyph_cells > width) {
+      break;
+    }
+    kept += glyph;
+    cells += glyph_cells;
+  }
+  return kept;
+}
+
 // Truncate a single display line to `width` cells at glyph boundaries. Used
 // for header metadata, which must stay on one line.
 void truncate_display_line(DisplayLine &line, std::size_t width) {
@@ -677,19 +698,7 @@ void truncate_display_line(DisplayLine &line, std::size_t width) {
       cells += segment_cells;
       continue;
     }
-    const std::size_t remaining = width - cells;
-    std::string kept_text;
-    std::size_t kept_cells = 0;
-    for (const std::string &glyph : ftxui::Utf8ToGlyphs(segment.text)) {
-      const std::size_t glyph_cells =
-          static_cast<std::size_t>(ftxui::string_width(glyph));
-      if (kept_cells + glyph_cells > remaining) {
-        break;
-      }
-      kept_text += glyph;
-      kept_cells += glyph_cells;
-    }
-    segment.text = std::move(kept_text);
+    segment.text = clip_to_width(segment.text, width - cells);
     ++kept_segments;
     break;
   }
@@ -913,6 +922,66 @@ void restore_search_origin(AppState &state) {
       std::min(state.search_origin_selected, state.parsed.messages.size() - 1);
 }
 
+// Messages with an empty body and no annotations are already one line.
+bool message_foldable(const loupe::LogMessage &message) {
+  return !message.content.empty() || !message.annotations.empty();
+}
+
+void ensure_fold_state_size(AppState &state) {
+  if (state.folded.size() != state.parsed.messages.size()) {
+    state.folded.assign(state.parsed.messages.size(), false);
+  }
+}
+
+// A search match hidden inside a folded message would highlight nothing, so
+// jumps onto a match open the fold they land in.
+void unfold_message(AppState &state, std::size_t index) {
+  if (index < state.folded.size() && state.folded[index]) {
+    state.folded[index] = false;
+    state.lines_width = -1; // Row geometry changed; rebuild display lines.
+  }
+}
+
+void toggle_fold(AppState &state) {
+  if (state.parsed.messages.empty()
+      || state.selected >= state.parsed.messages.size()) {
+    return;
+  }
+  if (!message_foldable(state.parsed.messages[state.selected])) {
+    state.status = "nothing to fold";
+    return;
+  }
+  ensure_fold_state_size(state);
+  state.folded[state.selected] = !state.folded[state.selected];
+  loupe::follow_selection(state.scroll);
+  state.lines_width = -1;
+  state.status.clear();
+}
+
+void set_all_folds(AppState &state, bool folded) {
+  if (state.parsed.messages.empty()) {
+    return;
+  }
+  ensure_fold_state_size(state);
+  std::size_t changed = 0;
+  for (std::size_t index = 0; index < state.parsed.messages.size(); ++index) {
+    if (!message_foldable(state.parsed.messages[index])
+        || state.folded[index] == folded) {
+      continue;
+    }
+    state.folded[index] = folded;
+    ++changed;
+  }
+  if (changed == 0) {
+    state.status = folded ? "nothing to fold" : "no folds";
+    return;
+  }
+  loupe::follow_selection(state.scroll);
+  state.lines_width = -1;
+  state.status = std::string{folded ? "folded " : "unfolded "}
+               + std::to_string(changed) + " messages";
+}
+
 std::string search_progress(const AppState &state) {
   const std::string_view query = state.search_active
                                    ? std::string_view{state.search_input}
@@ -965,6 +1034,7 @@ void update_search_preview(AppState &state) {
                              loupe::SearchDirection::Forward, true);
   if (match.has_value()) {
     state.selected = *match;
+    unfold_message(state, *match);
   } else {
     restore_search_origin(state);
   }
@@ -1000,6 +1070,7 @@ void commit_search(AppState &state) {
   }
 
   state.selected = *match;
+  unfold_message(state, *match);
   loupe::follow_selection(state.scroll);
   state.status.clear();
 }
@@ -1020,6 +1091,7 @@ void jump_to_search_match(AppState &state, loupe::SearchDirection direction,
   }
 
   state.selected = *match;
+  unfold_message(state, *match);
   loupe::follow_selection(state.scroll);
   state.status.clear();
 }
@@ -1049,6 +1121,8 @@ void reload(AppState &state) {
     state.show_diagnostics = false;
   }
   state.lines_width = -1; // Force a display-line rebuild.
+  // Message indices may shift across a reload; folds do not carry over.
+  state.folded.assign(state.parsed.messages.size(), false);
   state.overview_hovered.reset();
   clamp_selection(state);
   if (!state.search_query.empty()) {
@@ -1114,11 +1188,130 @@ bool handle_diagnostics_event(AppState &state, const ftxui::Event &event) {
   return true;
 }
 
+// One-line summary standing in for a folded message's body and
+// annotations: a fold marker, the first non-empty content line clipped to
+// fit, and the hidden source-line count. Muted throughout so folded blocks
+// recede while skimming; the header above keeps the role color.
+DisplayLine fold_summary_line(const loupe::LogMessage &message,
+                              std::size_t width) {
+  using ftxui::Color;
+
+  // Mirror the body rendering's source text (see append_message_display_
+  // lines) so the preview matches what unfolding would show.
+  const bool verbatim_body =
+      message.role == "tool" || message.role == "unknown";
+  const std::string clipped = clipped_content(
+      verbatim_body ? message.content
+                    : loupe::format_structured_text(message.content));
+
+  std::string_view rest{clipped};
+  std::string_view preview;
+  while (!rest.empty()) {
+    const std::size_t end = rest.find('\n');
+    const std::string_view line = rest.substr(0, end);
+    if (!line.empty()) {
+      preview = line;
+      break;
+    }
+    rest =
+        end == std::string_view::npos ? std::string_view{} : rest.substr(end + 1);
+  }
+  // Messages whose payload lives in annotations (tool calls carry an empty
+  // content and the call in annotations) preview their first annotation
+  // line instead.
+  std::string annotation_preview;
+  if (preview.empty()) {
+    for (const std::string &annotation : message.annotations) {
+      std::string_view annotation_rest{annotation};
+      while (!annotation_rest.empty()) {
+        const std::size_t end = annotation_rest.find('\n');
+        const std::string_view line = annotation_rest.substr(0, end);
+        if (!line.empty()) {
+          annotation_preview = std::string{line};
+          break;
+        }
+        annotation_rest = end == std::string_view::npos
+                            ? std::string_view{}
+                            : annotation_rest.substr(end + 1);
+      }
+      if (!annotation_preview.empty()) {
+        break;
+      }
+    }
+    preview = annotation_preview;
+  }
+
+  // Count every source line the fold hides: the body (or its "(empty)"
+  // stand-in) plus the annotation lines.
+  std::size_t hidden = 0;
+  if (message.content.empty()) {
+    hidden = 1;
+  } else {
+    hidden = static_cast<std::size_t>(
+                 std::count(clipped.begin(), clipped.end(), '\n'))
+             + 1;
+  }
+  for (const std::string &annotation : message.annotations) {
+    hidden += static_cast<std::size_t>(
+                  std::count(annotation.begin(), annotation.end(), '\n'))
+              + 1;
+  }
+
+  const std::string marker = "\u25BA ";
+  const std::string trailer = "  \u00B7 " + pluralize(hidden, "line", "lines");
+  const std::size_t fixed =
+      static_cast<std::size_t>(ftxui::string_width(marker))
+      + static_cast<std::size_t>(ftxui::string_width(trailer));
+  const std::size_t available = width > fixed ? width - fixed : 0;
+
+  std::string preview_text;
+  bool ellipsis = false;
+  if (preview.empty()) {
+    preview_text = clip_to_width("(empty)", available);
+  } else {
+    const std::string expanded = expand_tabs(preview);
+    // The continuation mark earns its cell whenever content follows the
+    // preview: more hidden lines, or the preview itself clipped short.
+    ellipsis = hidden > 1;
+    std::size_t budget = available;
+    if (ellipsis && budget > 0) {
+      --budget;
+    }
+    preview_text = clip_to_width(expanded, budget);
+    if (!ellipsis && preview_text.size() < expanded.size()) {
+      ellipsis = true;
+      if (budget > 0) {
+        --budget;
+      }
+      preview_text = clip_to_width(expanded, budget);
+    }
+    // The mark never overflows the budget itself at degenerate widths.
+    if (ellipsis
+        && static_cast<std::size_t>(ftxui::string_width(preview_text)) + 1
+               > available) {
+      ellipsis = false;
+    }
+  }
+
+  DisplayLine line{
+      StyledSegment{.text = marker, .color = Color::GrayLight, .dim = true},
+      StyledSegment{.text = ellipsis ? preview_text + "\u2026" : preview_text,
+                    .color = Color::GrayLight,
+                    .dim = true},
+      StyledSegment{.text = trailer, .color = Color::GrayDark, .dim = true},
+  };
+  // Overly narrow terminals sacrifice the trailer before the preview.
+  truncate_display_line(line, width);
+  return line;
+}
+
 // Expand one message into display lines: a single-line header, the wrapped
-// body, wrapped annotations, and a trailing blank separator line.
+// body, wrapped annotations, and a trailing blank separator line. A folded
+// message emits only the header, a one-line summary, and the separator.
 void
 append_message_display_lines(const loupe::LogMessage &message,
-                             std::size_t width, std::vector<DisplayLine> &out) {
+                             std::size_t width, bool folded,
+                             std::vector<DisplayLine> &out) {
   using ftxui::Color;
 
   DisplayLine header{
@@ -1144,6 +1337,12 @@ append_message_display_lines(const loupe::LogMessage &message,
   }
   truncate_display_line(header, width);
   out.push_back(std::move(header));
+
+  if (folded && message_foldable(message)) {
+    out.push_back(fold_summary_line(message, width));
+    out.emplace_back(); // Blank separator between messages.
+    return;
+  }
 
   // Tool results and unknown payloads are raw output, not prose. Render
   // them verbatim; Markdown would eat comment markers (`/* */`), turn ` * `
@@ -1200,9 +1399,11 @@ bool ensure_display_lines(AppState &state) {
   state.message_rows.clear();
   const std::size_t wrap_width = static_cast<std::size_t>(
       std::max(16, terminal_width - loupe::kMessageOverviewWidth - 3));
-  for (const loupe::LogMessage &message : state.parsed.messages) {
+  for (std::size_t index = 0; index < state.parsed.messages.size(); ++index) {
     const std::size_t first_row = state.display_lines.size();
-    append_message_display_lines(message, wrap_width, state.display_lines);
+    const bool folded = index < state.folded.size() && state.folded[index];
+    append_message_display_lines(state.parsed.messages[index], wrap_width,
+                                 folded, state.display_lines);
     state.message_rows.emplace_back(first_row, state.display_lines.size());
   }
   return true;
@@ -1707,8 +1908,8 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
                            | xflex_shrink);
   }
 
-  std::string help_text = "j/k move  PgUp/Dn  g/G first/last  / search  "
-                          "n/N  r reload";
+  std::string help_text = "j/k move  g/G ends  / search  n/N  enter fold  "
+                          "z/Z all  r reload";
   if (state.show_diagnostics) {
     help_text = "j/k scroll  g/G top/bottom  e close  r reload";
   } else if (!state.parsed.errors.empty()) {
@@ -1848,6 +2049,18 @@ handle_event(AppState &state, ftxui::Event event, const ftxui::Closure &quit) {
   }
   if (event == ftxui::Event::N) {
     jump_to_search_match(state, loupe::SearchDirection::Backward, false);
+    return true;
+  }
+  if (event == ftxui::Event::Return) {
+    toggle_fold(state);
+    return true;
+  }
+  if (event == ftxui::Event::z) {
+    set_all_folds(state, true);
+    return true;
+  }
+  if (event == ftxui::Event::Z) {
+    set_all_folds(state, false);
     return true;
   }
   if (event == ftxui::Event::q || event == ftxui::Event::Escape) {
