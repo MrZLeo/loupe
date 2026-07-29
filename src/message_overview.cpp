@@ -49,14 +49,8 @@ centered_track_box(const ftxui::Box &box, std::size_t message_count) {
 
   const int scaled_height = std::max(
       1, static_cast<int>(static_cast<long long>(available_height) * 4 / 5));
-  const std::size_t scaled_count = static_cast<std::size_t>(scaled_height);
-  const std::size_t spaced_capacity = (scaled_count + 1) / 2;
-  int track_height = scaled_height;
-  if (message_count <= spaced_capacity) {
-    track_height = static_cast<int>(message_count * 2 - 1);
-  } else if (message_count <= scaled_count) {
-    track_height = static_cast<int>(message_count);
-  }
+  const int track_height = static_cast<int>(
+      std::min(message_count, static_cast<std::size_t>(scaled_height)));
   const int top_margin = (available_height - track_height) / 2;
   const int track_top = box.y_min + top_margin;
   return ftxui::Box{box.x_min, box.x_max, track_top,

@@ -36,7 +36,7 @@ TEST_CASE("message overview maps its full height onto the transcript",
   REQUIRE_FALSE(loupe::message_overview_index_at(box, 0, 5, 8).has_value());
 }
 
-TEST_CASE("message overview leaves space between entries when room permits",
+TEST_CASE("message overview packs entries contiguously and centers them",
           "[message_overview]") {
   const std::vector<loupe::LogMessage> messages{
       loupe::LogMessage{.role = "user"},
@@ -51,20 +51,21 @@ TEST_CASE("message overview leaves space between entries when room permits",
 
   ftxui::Render(screen, overview);
 
-  REQUIRE(reflected == (ftxui::Box{0, 6, 1, 5}));
+  REQUIRE(reflected == (ftxui::Box{0, 6, 2, 4}));
   REQUIRE(bar_width(screen, 0) == 0);
-  REQUIRE(bar_width(screen, 1) == 2);
-  REQUIRE(bar_width(screen, 2) == 0);
+  REQUIRE(bar_width(screen, 1) == 0);
+  REQUIRE(bar_width(screen, 2) == 2);
   REQUIRE(bar_width(screen, 3) == 2);
-  REQUIRE(bar_width(screen, 5) == 2);
+  REQUIRE(bar_width(screen, 4) == 2);
+  REQUIRE(bar_width(screen, 5) == 0);
   REQUIRE(bar_width(screen, 6) == 0);
   REQUIRE(screen.CellAt(4, 3).character != "━");
   REQUIRE(screen.CellAt(5, 3).character == "━");
   REQUIRE(screen.CellAt(6, 3).character == "━");
   REQUIRE(screen.CellAt(6, 3).bold);
   REQUIRE_FALSE(screen.CellAt(6, 3).dim);
-  REQUIRE_FALSE(screen.CellAt(6, 1).bold);
-  REQUIRE(screen.CellAt(6, 1).dim);
+  REQUIRE_FALSE(screen.CellAt(6, 2).bold);
+  REQUIRE(screen.CellAt(6, 2).dim);
 }
 
 TEST_CASE("message overview stretches left toward the mouse focus",
