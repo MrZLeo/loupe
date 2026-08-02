@@ -1,6 +1,30 @@
 ---
-Checks: '*,-fuchsia-*,-google-*,-zircon-*,-abseil-*,-modernize-use-trailing-return-type,-llvm-*,-llvmlibc-*'
-CheckOptions: [{ key: misc-non-private-member-variables-in-classes, value: IgnoreClassesWithAllMemberVariablesBeingPublic }]
+Checks: >
+  *,
+  -abseil-*,
+  -altera-*,
+  -bugprone-throwing-static-initialization,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -cert-err58-cpp,
+  -clang-diagnostic-c2y-extensions,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -fuchsia-*,
+  -google-*,
+  -hicpp-named-parameter,
+  -llvm-*,
+  -llvmlibc-*,
+  -misc-use-anonymous-namespace,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-magic-numbers,
+  -readability-named-parameter,
+  -zircon-*
+CheckOptions:
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: 'true'
 WarningsAsErrors: '*'
-HeaderFilterRegex: ''
+HeaderFilterRegex: '.*/loupe/(include|test)/.*'
 FormatStyle: none
+

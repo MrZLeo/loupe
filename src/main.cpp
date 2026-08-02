@@ -979,7 +979,8 @@ void set_all_folds(AppState &state, bool folded) {
   loupe::follow_selection(state.scroll);
   state.lines_width = -1;
   state.status = std::string{folded ? "folded " : "unfolded "}
-               + std::to_string(changed) + " messages";
+               + std::to_string(changed)
+               + " messages";
 }
 
 std::string search_progress(const AppState &state) {
@@ -1192,8 +1193,8 @@ bool handle_diagnostics_event(AppState &state, const ftxui::Event &event) {
 // annotations: a fold marker, the first non-empty content line clipped to
 // fit, and the hidden source-line count. Muted throughout so folded blocks
 // recede while skimming; the header above keeps the role color.
-DisplayLine fold_summary_line(const loupe::LogMessage &message,
-                              std::size_t width) {
+DisplayLine
+fold_summary_line(const loupe::LogMessage &message, std::size_t width) {
   using ftxui::Color;
 
   // Mirror the body rendering's source text (see append_message_display_
@@ -1213,8 +1214,8 @@ DisplayLine fold_summary_line(const loupe::LogMessage &message,
       preview = line;
       break;
     }
-    rest =
-        end == std::string_view::npos ? std::string_view{} : rest.substr(end + 1);
+    rest = end == std::string_view::npos ? std::string_view{}
+                                         : rest.substr(end + 1);
   }
   // Messages whose payload lives in annotations (tool calls carry an empty
   // content and the call in annotations) preview their first annotation
@@ -1249,12 +1250,12 @@ DisplayLine fold_summary_line(const loupe::LogMessage &message,
   } else {
     hidden = static_cast<std::size_t>(
                  std::count(clipped.begin(), clipped.end(), '\n'))
-             + 1;
+           + 1;
   }
   for (const std::string &annotation : message.annotations) {
     hidden += static_cast<std::size_t>(
                   std::count(annotation.begin(), annotation.end(), '\n'))
-              + 1;
+            + 1;
   }
 
   const std::string marker = "\u25BA ";
@@ -1308,10 +1309,9 @@ DisplayLine fold_summary_line(const loupe::LogMessage &message,
 // Expand one message into display lines: a single-line header, the wrapped
 // body, wrapped annotations, and a trailing blank separator line. A folded
 // message emits only the header, a one-line summary, and the separator.
-void
-append_message_display_lines(const loupe::LogMessage &message,
-                             std::size_t width, bool folded,
-                             std::vector<DisplayLine> &out) {
+void append_message_display_lines(const loupe::LogMessage &message,
+                                  std::size_t width, bool folded,
+                                  std::vector<DisplayLine> &out) {
   using ftxui::Color;
 
   DisplayLine header{
