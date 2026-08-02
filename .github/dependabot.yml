@@ -1,0 +1,45 @@
+# Dependabot configuration.
+#
+# Covers the ecosystems Dependabot natively supports in this repo:
+#   - github-actions: action versions in .github/workflows/
+#   - docker: base image tag in the root Dockerfile
+#
+# CPM.cmake dependencies pinned in CMakeLists.txt (simdjson, FTXUI, argum,
+# Catch2) are NOT covered — Dependabot has no CMake ecosystem, and FTXUI
+# additionally requires manual verification that
+# cmake/patches/ftxui-terminal-input-burst.patch still applies.
+#
+# All PRs are reviewed and merged manually.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # Reduce PR noise: one PR for all minor/patch action updates.
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      # Conventional Commits, per AGENTS.md.
+      prefix: "build"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "build"
+    labels:
+      - "dependencies"
+    # The Dockerfile intentionally tracks an Ubuntu LTS base; PRs proposing
+    # non-LTS tags can simply be closed.
+    open-pull-requests-limit: 3
