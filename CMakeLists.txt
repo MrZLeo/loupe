@@ -172,7 +172,7 @@ endif()
 CPMAddPackage(
   NAME simdjson
   GITHUB_REPOSITORY simdjson/simdjson
-  VERSION 4.6.4
+  VERSION 4.6.6
   OPTIONS
     "SIMDJSON_INSTALL ${PROJECT_INSTALL_SIMDJSON}"
     "SIMDJSON_BUILD_EXAMPLES OFF"
@@ -187,7 +187,7 @@ CPMAddPackage(
 CPMAddPackage(
   NAME FTXUI
   GITHUB_REPOSITORY ArthurSonzogni/FTXUI
-  VERSION 7.0.1
+  VERSION 7.0.2
   PATCH_COMMAND patch -p1 -N -r /dev/null < "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/ftxui-terminal-input-burst.patch" || true
   OPTIONS
     "FTXUI_BUILD_DOCS OFF"
@@ -199,7 +199,7 @@ CPMAddPackage(
 CPMAddPackage(
   NAME argum
   GITHUB_REPOSITORY gershnik/argum
-  GIT_TAG v2.10
+  GIT_TAG v2.11
   OPTIONS
     "ARGUM_NO_TESTS ON"
 )
