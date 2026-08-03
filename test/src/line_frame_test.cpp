@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <ftxui/dom/elements.hpp>
+#include <ftxui/dom/node.hpp>
 #include <ftxui/screen/screen.hpp>
 #include <string>
 
@@ -19,7 +20,7 @@ TEST_CASE("manual scrolling survives wrapped layout passes", "[scroll]") {
 
   ftxui::Render(screen, frame);
   REQUIRE(scroll.max_top_row > 0);
-  REQUIRE(screen.ToString().find("omega") == std::string::npos);
+  REQUIRE(!screen.ToString().contains("omega"));
 
   loupe::scroll_by_rows(scroll, scroll.max_top_row);
   const int bottom_row = scroll.top_row;
@@ -28,7 +29,7 @@ TEST_CASE("manual scrolling survives wrapped layout passes", "[scroll]") {
 
   REQUIRE(scroll.top_row == bottom_row);
   REQUIRE(scroll.top_row == scroll.max_top_row);
-  REQUIRE(screen.ToString().find("omega") != std::string::npos);
+  REQUIRE(screen.ToString().contains("omega"));
 }
 
 TEST_CASE("progress indicator uses the layout from the current frame",
@@ -50,9 +51,9 @@ TEST_CASE("progress indicator uses the layout from the current frame",
                                       ftxui::Dimension::Fixed(3));
 
   ftxui::Render(screen, document);
-  REQUIRE(screen.ToString().find("0%") != std::string::npos);
+  REQUIRE(screen.ToString().contains("0%"));
 
   loupe::scroll_by_rows(scroll, scroll.max_top_row);
   ftxui::Render(screen, document);
-  REQUIRE(screen.ToString().find("100%") != std::string::npos);
+  REQUIRE(screen.ToString().contains("100%"));
 }

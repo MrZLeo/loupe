@@ -1,14 +1,21 @@
 #include "loupe/session_parser.hpp"
 
 #include "loupe/format_detector.hpp"
+#include "loupe/log_format.hpp"
 #include "loupe/log_parser.hpp"
 
+#include "loupe/session_ir.hpp"
 #include "session_parser_internal.hpp"
 
+#include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <functional>
+#include <ios>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -206,7 +213,7 @@ parse_session_content(std::string_view content, LogFormat format) {
 
 SessionParseResult
 parse_session_file(const std::filesystem::path &path, LogFormat format) {
-  std::ifstream input{path, std::ios::binary};
+  const std::ifstream input{path, std::ios::binary};
   if (!input) {
     SessionParseResult result;
     result.session.format = format;

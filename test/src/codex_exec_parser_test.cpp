@@ -1,9 +1,13 @@
+#include "loupe/log_format.hpp"
+#include "loupe/log_message.hpp"
 #include "loupe/message_projection.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <set>
 #include <string>
@@ -28,20 +32,20 @@ std::vector<const Event *> events_of(const loupe::SessionIR &session) {
 
 bool has_diagnostic(const loupe::SessionParseResult &parsed,
                     loupe::DiagnosticCode code) {
-  return std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(),
-                     [code](const loupe::Diagnostic &diagnostic) {
-                       return diagnostic.code == code;
-                     });
+  return std::ranges::any_of(parsed.diagnostics,
+                             [code](const loupe::Diagnostic &diagnostic) {
+                               return diagnostic.code == code;
+                             });
 }
 
 bool
 has_diagnostic(const loupe::SessionParseResult &parsed,
                loupe::DiagnosticCode code, loupe::DiagnosticSeverity severity) {
-  return std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(),
-                     [code, severity](const loupe::Diagnostic &diagnostic) {
-                       return diagnostic.code == code
-                           && diagnostic.severity == severity;
-                     });
+  return std::ranges::any_of(
+      parsed.diagnostics,
+      [code, severity](const loupe::Diagnostic &diagnostic) {
+        return diagnostic.code == code && diagnostic.severity == severity;
+      });
 }
 
 std::string content_text(const std::vector<loupe::ContentBlock> &content) {
@@ -59,19 +63,18 @@ std::string content_text(const std::vector<loupe::ContentBlock> &content) {
 const loupe::ToolCallEvent *
 tool_call_named(const loupe::SessionIR &session, std::string_view name) {
   const auto calls = events_of<loupe::ToolCallEvent>(session);
-  const auto call =
-      std::find_if(calls.begin(), calls.end(), [name](const auto *candidate) {
-        return candidate->name == name;
-      });
+  const auto call = std::ranges::find_if(
+      calls, [name](const auto *candidate) { return candidate->name == name; });
   return call == calls.end() ? nullptr : *call;
 }
 
 const loupe::ToolResultEvent *
 tool_result_named(const loupe::SessionIR &session, std::string_view name) {
   const auto results = events_of<loupe::ToolResultEvent>(session);
-  const auto result = std::find_if(
-      results.begin(), results.end(),
-      [name](const auto *candidate) { return candidate->name == name; });
+  const auto result =
+      std::ranges::find_if(results, [name](const auto *candidate) {
+        return candidate->name == name;
+      });
   return result == results.end() ? nullptr : *result;
 }
 
@@ -80,9 +83,8 @@ execution_event(const loupe::SessionIR &session,
                 loupe::ExecutionSubject subject, loupe::ExecutionPhase phase,
                 std::string_view native_type = {}) {
   const auto executions = events_of<loupe::ExecutionEvent>(session);
-  const auto execution = std::find_if(
-      executions.begin(), executions.end(),
-      [subject, phase, native_type](const auto *candidate) {
+  const auto execution = std::ranges::find_if(
+      executions, [subject, phase, native_type](const auto *candidate) {
         return candidate->subject == subject
             && candidate->phase == phase
             && (native_type.empty() || candidate->native_type == native_type);
@@ -106,7 +108,7 @@ std::size_t annotation_count(const std::vector<loupe::LogMessage> &messages,
     count += static_cast<std::size_t>(
         std::count_if(message.annotations.begin(), message.annotations.end(),
                       [part](const std::string &annotation) {
-                        return annotation.find(part) != std::string::npos;
+                        return annotation.contains(part);
                       }));
   }
   return count;
@@ -154,7 +156,7 @@ TEST_CASE(
 
   REQUIRE(calls.front()->name == "command_execution");
   REQUIRE(calls.front()->name_space == "codex");
-  REQUIRE(calls.front()->input.find("printf ok") != std::string::npos);
+  REQUIRE(calls.front()->input.contains("printf ok"));
   REQUIRE_FALSE(calls.front()->input_is_json);
   REQUIRE_FALSE(calls.front()->call_id.empty());
 
@@ -223,8 +225,8 @@ TEST_CASE("map every Codex Exec item kind into loss-aware semantic events",
   const auto *file_result = tool_result_named(parsed.session, "file_change");
   REQUIRE(file_change != nullptr);
   REQUIRE(file_result != nullptr);
-  REQUIRE(file_change->input.find("a.txt") != std::string::npos);
-  REQUIRE(file_change->input.find("b.txt") != std::string::npos);
+  REQUIRE(file_change->input.contains("a.txt"));
+  REQUIRE(file_change->input.contains("b.txt"));
   REQUIRE_FALSE(file_result->is_error);
 
   const auto *mcp = tool_call_named(parsed.session, "read");
@@ -232,32 +234,30 @@ TEST_CASE("map every Codex Exec item kind into loss-aware semantic events",
   REQUIRE(mcp != nullptr);
   REQUIRE(mcp_result != nullptr);
   REQUIRE(mcp->name_space == "filesystem");
-  REQUIRE(mcp->input.find("a.txt") != std::string::npos);
+  REQUIRE(mcp->input.contains("a.txt"));
   REQUIRE_FALSE(mcp_result->output.empty());
-  REQUIRE(content_text(mcp_result->output).find("mcp ok") != std::string::npos);
-  REQUIRE(content_text(mcp_result->output).find("42") != std::string::npos);
+  REQUIRE(content_text(mcp_result->output).contains("mcp ok"));
+  REQUIRE(content_text(mcp_result->output).contains("42"));
 
   const auto *collab = tool_call_named(parsed.session, "spawn_agent");
-  const auto *collab_result =
-      tool_result_named(parsed.session, "spawn_agent");
+  const auto *collab_result = tool_result_named(parsed.session, "spawn_agent");
   REQUIRE(collab != nullptr);
   REQUIRE(collab_result != nullptr);
   REQUIRE(collab->name_space == "codex.collab");
-  REQUIRE(collab->input.find("inspect tests") != std::string::npos);
-  REQUIRE(content_text(collab_result->output).find("child-1")
-          != std::string::npos);
+  REQUIRE(collab->input.contains("inspect tests"));
+  REQUIRE(content_text(collab_result->output).contains("child-1"));
 
   const auto *web = tool_call_named(parsed.session, "web_search");
   REQUIRE(web != nullptr);
   REQUIRE(web->name_space == "codex");
-  REQUIRE(web->input.find("Codex Exec") != std::string::npos);
-  REQUIRE(web->input.find("https://example.test") != std::string::npos);
+  REQUIRE(web->input.contains("Codex Exec"));
+  REQUIRE(web->input.contains("https://example.test"));
   REQUIRE(events_of<loupe::ToolResultEvent>(parsed.session).size() == 4);
 
   const auto metadata = events_of<loupe::MetadataEvent>(parsed.session);
-  REQUIRE(std::any_of(metadata.begin(), metadata.end(), [](const auto *event) {
+  REQUIRE(std::ranges::any_of(metadata, [](const auto *event) {
     return event->name == "codex_exec.todo_list"
-        && event->value.find("\"completed\":true") != std::string::npos;
+        && event->value.contains("\"completed\":true");
   }));
 
   const auto *warning =
@@ -285,7 +285,7 @@ TEST_CASE("support self-contained completed Codex Exec tool items",
   REQUIRE(calls.size() == 1);
   REQUIRE(results.size() == 1);
   REQUIRE(calls.front()->call_id == results.front()->call_id);
-  REQUIRE(calls.front()->input.find("echo complete") != std::string::npos);
+  REQUIRE(calls.front()->input.contains("echo complete"));
   REQUIRE(content_text(results.front()->output) == "complete");
 }
 
@@ -305,9 +305,9 @@ TEST_CASE("accept null prompts for Codex Exec collab tools",
   const auto calls = events_of<loupe::ToolCallEvent>(parsed.session);
   REQUIRE(calls.size() == 2);
   REQUIRE(calls[0]->name == "wait");
-  REQUIRE(calls[0]->input.find("\"prompt\"") == std::string::npos);
+  REQUIRE(!calls[0]->input.contains("\"prompt\""));
   REQUIRE(calls[1]->name == "close_agent");
-  REQUIRE(calls[1]->input.find("\"prompt\"") == std::string::npos);
+  REQUIRE(!calls[1]->input.contains("\"prompt\""));
 }
 
 TEST_CASE("preserve every JSON shape accepted by MCP arguments",
@@ -324,11 +324,11 @@ TEST_CASE("preserve every JSON shape accepted by MCP arguments",
   REQUIRE_FALSE(parsed.has_fatal_error());
   const auto calls = events_of<loupe::ToolCallEvent>(parsed.session);
   REQUIRE(calls.size() == 3);
-  REQUIRE(calls[0]->input.find("\"value\":1") != std::string::npos);
+  REQUIRE(calls[0]->input.contains("\"value\":1"));
   REQUIRE(calls[1]->input == "7");
   REQUIRE(calls[2]->input == "null");
-  REQUIRE(std::all_of(calls.begin(), calls.end(),
-                      [](const auto *call) { return call->input_is_json; }));
+  REQUIRE(std::ranges::all_of(
+      calls, [](const auto *call) { return call->input_is_json; }));
 }
 
 TEST_CASE("merge Codex Exec item snapshots without duplicating tool semantics",
@@ -348,7 +348,7 @@ TEST_CASE("merge Codex Exec item snapshots without duplicating tool semantics",
     const auto results = events_of<loupe::ToolResultEvent>(parsed.session);
     REQUIRE(calls.size() == 1);
     REQUIRE(results.size() == 1);
-    REQUIRE(calls.front()->input.find("echo inherited") != std::string::npos);
+    REQUIRE(calls.front()->input.contains("echo inherited"));
     REQUIRE(content_text(results.front()->output) == "final");
     REQUIRE(results.front()->call_id == calls.front()->call_id);
   }
@@ -452,10 +452,9 @@ TEST_CASE("map failed and declined Codex Exec commands to error results",
                               return message.role == "tool";
                             }))
           == 2);
-  REQUIRE(std::none_of(displayed.begin(), displayed.end(),
-                       [](const loupe::LogMessage &message) {
-                         return message.role == "system";
-                       }));
+  REQUIRE(std::ranges::none_of(displayed, [](const loupe::LogMessage &message) {
+    return message.role == "system";
+  }));
 }
 
 TEST_CASE("quarantine duplicate Codex Exec terminal events",
@@ -507,8 +506,8 @@ TEST_CASE("scope repeated Codex Exec item ids to their invocation",
     const auto results = events_of<loupe::ToolResultEvent>(parsed.session);
     REQUIRE(calls.size() == 2);
     REQUIRE(results.size() == 2);
-    REQUIRE(calls[0]->input.find("first") != std::string::npos);
-    REQUIRE(calls[1]->input.find("second") != std::string::npos);
+    REQUIRE(calls[0]->input.contains("first"));
+    REQUIRE(calls[1]->input.contains("second"));
     REQUIRE(calls[0]->call_id != calls[1]->call_id);
     REQUIRE(content_text(results[0]->output) == "first");
     REQUIRE(content_text(results[1]->output) == "second");
@@ -681,10 +680,8 @@ TEST_CASE("preserve unknown Codex Exec extensions and reject wrong formats",
     REQUIRE(events_of<loupe::UnknownEvent>(parsed.session).size() == 2);
     REQUIRE(events_of<loupe::MessageEvent>(parsed.session).size() == 1);
     REQUIRE(events_of<loupe::UsageEvent>(parsed.session).size() == 1);
-    REQUIRE(parsed.session.records[2].raw_json.find("future.event")
-            != std::string::npos);
-    REQUIRE(parsed.session.records[3].raw_json.find("future_field")
-            != std::string::npos);
+    REQUIRE(parsed.session.records[2].raw_json.contains("future.event"));
+    REQUIRE(parsed.session.records[3].raw_json.contains("future_field"));
   }
 
   SECTION("an unknown-only stream is a format mismatch") {
@@ -791,7 +788,8 @@ TEST_CASE("recover incomplete Codex Exec streams at EOF",
 
   SECTION("BOM, CRLF, and blank physical lines preserve logical line numbers") {
     const std::string content =
-        "\xEF\xBB\xBF{\"type\":\"thread.started\",\"thread_id\":\"thread-lines\"}\r\n"
+        "\xEF\xBB\xBF{\"type\":\"thread.started\",\"thread_id\":\"thread-"
+        "lines\"}\r\n"
         "\r\n"
         "{\"type\":\"turn.started\"}\r\n"
         "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":0}}\r\n";

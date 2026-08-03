@@ -1,6 +1,9 @@
 #include "loupe/synchronized_output.hpp"
 
+#include <cstddef>
+#include <ios>
 #include <limits>
+#include <memory>
 #include <ostream>
 #include <stdexcept>
 #include <streambuf>
@@ -23,7 +26,7 @@ public:
   void finish() noexcept {
     try {
       pubsync();
-    } catch (...) {
+    } catch (...) { // NOLINT(bugprone-empty-catch)
       // Destructors must not allow output failures to terminate the process.
     }
   }
@@ -131,7 +134,7 @@ private:
             static_cast<std::streamsize>(kEndSynchronizedUpdate.size()));
       }
       upstream_->pubsync();
-    } catch (...) {
+    } catch (...) { // NOLINT(bugprone-empty-catch)
       // This is a best-effort recovery from a failed frame write.
     }
   }
@@ -162,7 +165,7 @@ ScopedSynchronizedOutput::~ScopedSynchronizedOutput() noexcept {
     if (output_.rdbuf() == buffer_.get()) {
       output_.rdbuf(upstream_);
     }
-  } catch (...) {
+  } catch (...) { // NOLINT(bugprone-empty-catch)
     // Standard streams do not normally throw here; keep destruction noexcept.
   }
 }

@@ -1,15 +1,18 @@
 #include "loupe/message_projection.hpp"
 
+#include "loupe/log_message.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 #include "loupe/structured_text.hpp"
 
 #include "json_helpers.hpp"
 
-#include <simdjson.h>
+#include <cstddef>
 
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <simdjson.h>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -51,7 +54,7 @@ std::string
 join_content(const std::vector<ContentBlock> &blocks, bool show_unknown) {
   std::string joined;
   for (const auto &block : blocks) {
-    std::string part = content_text(block, show_unknown);
+    const std::string part = content_text(block, show_unknown);
     if (part.empty()) {
       continue;
     }
@@ -190,7 +193,7 @@ LogMessage make_message(const MessageEvent &message, const EventIR &event,
 
 std::string todo_list_checklist(const std::string &json) {
   simdjson::dom::parser parser;
-  simdjson::padded_string padded{json};
+  const simdjson::padded_string padded{json};
   simdjson::dom::element root;
   if (parser.parse(padded).get(root)) {
     return json;

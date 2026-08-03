@@ -1,4 +1,6 @@
 #include "loupe/log_format.hpp"
+#include <optional>
+#include <string_view>
 
 namespace loupe {
 

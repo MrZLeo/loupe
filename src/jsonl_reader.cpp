@@ -1,6 +1,8 @@
 #include "jsonl_reader.hpp"
 
 #include <cctype>
+#include <cstddef>
+#include <string_view>
 
 namespace loupe::detail {
 

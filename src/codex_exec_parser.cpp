@@ -1,19 +1,23 @@
+#include "loupe/log_format.hpp"
+#include "loupe/session_ir.hpp"
 #include "session_parser_internal.hpp"
 
 #include "json_helpers.hpp"
 #include "jsonl_reader.hpp"
 
-#include <simdjson.h>
+#include <cstddef>
 
 #include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <simdjson.h>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace loupe::detail {
@@ -592,7 +596,7 @@ void refresh_tool_call(SessionParseResult &result, const ItemState &state) {
 
 std::string file_change_summary(const std::string &json) {
   simdjson::dom::parser parser;
-  simdjson::padded_string padded{json};
+  const simdjson::padded_string padded{json};
   element root;
   if (parser.parse(padded).get(root) || root.type() != element_type::ARRAY) {
     return json;
@@ -627,7 +631,7 @@ void append_mcp_content(element value, std::vector<ContentBlock> &output) {
   if (value.type() == element_type::STRING) {
     std::string_view text;
     if (!value.get_string().get(text)) {
-      output.push_back(TextContent{.text = std::string{text}});
+      output.emplace_back(TextContent{.text = std::string{text}});
     }
     return;
   }
@@ -640,11 +644,11 @@ void append_mcp_content(element value, std::vector<ContentBlock> &output) {
     for (const element block : blocks) {
       if (block.type() == element_type::OBJECT
           && string_at(block, "/type").value_or("") == "text") {
-        output.push_back(TextContent{
+        output.emplace_back(TextContent{
             .text = string_at(block, "/text").value_or(""),
         });
       } else {
-        output.push_back(UnknownContent{
+        output.emplace_back(UnknownContent{
             .native_type = block.type() == element_type::OBJECT
                              ? string_at(block, "/type").value_or("mcp_content")
                              : std::string{"mcp_content"},
@@ -655,7 +659,7 @@ void append_mcp_content(element value, std::vector<ContentBlock> &output) {
     return;
   }
 
-  output.push_back(UnknownContent{
+  output.emplace_back(UnknownContent{
       .native_type = "mcp_content",
       .json = json_text(value),
   });
@@ -664,10 +668,11 @@ void append_mcp_content(element value, std::vector<ContentBlock> &output) {
 void append_mcp_result_json(const std::string &json,
                             std::vector<ContentBlock> &output) {
   simdjson::dom::parser parser;
-  simdjson::padded_string padded{json};
+  const simdjson::padded_string padded{json};
   element root;
   if (parser.parse(padded).get(root)) {
-    output.push_back(UnknownContent{.native_type = "mcp_result", .json = json});
+    output.emplace_back(
+        UnknownContent{.native_type = "mcp_result", .json = json});
     return;
   }
 
@@ -686,14 +691,14 @@ void append_mcp_result_json(const std::string &json,
   element structured_content;
   if (element_at(root, "/structured_content", structured_content)
       && structured_content.type() != element_type::NULL_VALUE) {
-    output.push_back(UnknownContent{
+    output.emplace_back(UnknownContent{
         .native_type = "structured_content",
         .json = json_text(structured_content),
     });
     found = true;
   }
   if (!found) {
-    output.push_back(UnknownContent{
+    output.emplace_back(UnknownContent{
         .native_type = "mcp_result",
         .json = json_text(root),
     });
@@ -702,7 +707,7 @@ void append_mcp_result_json(const std::string &json,
 
 std::string error_message_json(const std::string &json) {
   simdjson::dom::parser parser;
-  simdjson::padded_string padded{json};
+  const simdjson::padded_string padded{json};
   element root;
   if (parser.parse(padded).get(root)) {
     return json;
@@ -733,7 +738,7 @@ ToolResultEvent make_tool_result(const ItemState &state) {
 
   if (snapshot.type == "command_execution") {
     result.name = "command_execution";
-    result.output.push_back(
+    result.output.emplace_back(
         TextContent{.text = snapshot.aggregated_output.value_or("")});
     result.exit_code = snapshot.exit_code;
     if (snapshot.exit_code && *snapshot.exit_code != 0) {
@@ -741,7 +746,7 @@ ToolResultEvent make_tool_result(const ItemState &state) {
     }
   } else if (snapshot.type == "file_change") {
     result.name = "file_change";
-    result.output.push_back(TextContent{
+    result.output.emplace_back(TextContent{
         .text = snapshot.changes_json
                   ? file_change_summary(*snapshot.changes_json)
                   : std::string{},
@@ -752,14 +757,14 @@ ToolResultEvent make_tool_result(const ItemState &state) {
       append_mcp_result_json(*snapshot.result_json, result.output);
     }
     if (snapshot.error_json) {
-      result.output.push_back(
+      result.output.emplace_back(
           TextContent{.text = error_message_json(*snapshot.error_json)});
       result.is_error = true;
     }
   } else if (snapshot.type == "collab_tool_call") {
     result.name = snapshot.tool.value_or("");
     if (snapshot.agents_states_json) {
-      result.output.push_back(
+      result.output.emplace_back(
           TextContent{.text = *snapshot.agents_states_json});
     }
   }
@@ -897,23 +902,29 @@ void report_incomplete(SessionParseResult &result, TurnState &turn,
     turn.incomplete_reported = true;
   }
 
-  std::vector<ItemState *> pending_items;
+  // `turn.items` is an unordered_map, so carry the item key along and use it
+  // as the final tiebreaker to keep diagnostic order deterministic.
+  std::vector<std::pair<std::string_view, ItemState *>> pending_items;
   pending_items.reserve(turn.items.size());
   for (auto &[key, item] : turn.items) {
-    static_cast<void>(key);
     if (item.saw_started && !item.saw_completed && !item.incomplete_reported) {
-      pending_items.push_back(&item);
+      pending_items.emplace_back(key, &item);
     }
   }
-  std::sort(pending_items.begin(), pending_items.end(),
-            [](const ItemState *left, const ItemState *right) {
-              if (left->started_line != right->started_line) {
-                return left->started_line < right->started_line;
-              }
-              return left->correlation_id < right->correlation_id;
-            });
+  std::ranges::sort(pending_items, [](const auto &left, const auto &right) {
+    const ItemState *left_item = left.second;
+    const ItemState *right_item = right.second;
+    if (left_item->started_line != right_item->started_line) {
+      return left_item->started_line < right_item->started_line;
+    }
+    if (left_item->correlation_id != right_item->correlation_id) {
+      return left_item->correlation_id < right_item->correlation_id;
+    }
+    return left.first < right.first;
+  });
 
-  for (ItemState *item : pending_items) {
+  for (const auto &entry : pending_items) {
+    ItemState *item = entry.second;
     add_diagnostic(
         result, DiagnosticSeverity::Warning, DiagnosticCode::IncompleteStream,
         "Codex Exec stream ended or crossed a boundary before item `"
@@ -1263,17 +1274,12 @@ void start_thread(element root, RecordIR &record, SessionParseResult &result,
       required_string(root, "/thread_id", "thread_id", result, record)
           .value_or("");
 
-  if (state.saw_thread) {
-    if (state.turn) {
-      report_incomplete(result, *state.turn, record.source_line);
-    }
-    ++state.run_index;
-  } else if (state.turn || state.next_prelude_item_index > 0) {
-    if (state.turn) {
-      report_incomplete(result, *state.turn, record.source_line);
-    }
+  if (state.saw_thread || state.turn || state.next_prelude_item_index > 0) {
     // A leading fragment belongs to a different inferred invocation. Do not
     // reuse its turn or prelude correlations for the first native thread.
+    if (state.turn) {
+      report_incomplete(result, *state.turn, record.source_line);
+    }
     ++state.run_index;
   }
   state.saw_thread = true;
@@ -1321,7 +1327,7 @@ void start_native_turn(RecordIR &record, SessionParseResult &result,
           record.source_line);
     }
   }
-  TurnState &turn = start_turn(state, false, record.source_line);
+  const TurnState &turn = start_turn(state, false, record.source_line);
   append_event(record, ExecutionEvent{
                            .subject = ExecutionSubject::Turn,
                            .phase = ExecutionPhase::Started,

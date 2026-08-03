@@ -1,9 +1,12 @@
+#include "loupe/log_format.hpp"
 #include "loupe/message_projection.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -13,13 +16,12 @@ namespace {
 bool has_diagnostic(const loupe::SessionParseResult &parsed,
                     loupe::DiagnosticCode code, std::size_t source_line,
                     std::string_view message_part) {
-  return std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(),
-                     [&](const loupe::Diagnostic &diagnostic) {
-                       return diagnostic.code == code
-                           && diagnostic.source_line == source_line
-                           && diagnostic.message.find(message_part)
-                                  != std::string::npos;
-                     });
+  return std::ranges::any_of(parsed.diagnostics,
+                             [&](const loupe::Diagnostic &diagnostic) {
+                               return diagnostic.code == code
+                                   && diagnostic.source_line == source_line
+                                   && diagnostic.message.contains(message_part);
+                             });
 }
 
 } // namespace

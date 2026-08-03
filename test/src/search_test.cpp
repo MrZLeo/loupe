@@ -1,7 +1,9 @@
+#include "loupe/log_message.hpp"
 #include "loupe/search.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <vector>
 
 TEST_CASE("find text matches returns case-insensitive ranges", "[search]") {
@@ -57,38 +59,30 @@ TEST_CASE("find message matches returns matching indexes", "[search]") {
 TEST_CASE("find next match wraps in both directions", "[search]") {
   const std::vector<std::size_t> matches{1, 3, 7};
 
-  REQUIRE(loupe::find_next_match(matches, 0,
-                                     loupe::SearchDirection::Forward,
-                                     true)
-          == 1);
-  REQUIRE(loupe::find_next_match(matches, 1,
-                                     loupe::SearchDirection::Forward,
-                                     true)
-          == 1);
-  REQUIRE(loupe::find_next_match(matches, 1,
-                                     loupe::SearchDirection::Forward,
-                                     false)
-          == 3);
-  REQUIRE(loupe::find_next_match(matches, 7,
-                                     loupe::SearchDirection::Forward,
-                                     false)
-          == 1);
+  REQUIRE(
+      loupe::find_next_match(matches, 0, loupe::SearchDirection::Forward, true)
+      == 1);
+  REQUIRE(
+      loupe::find_next_match(matches, 1, loupe::SearchDirection::Forward, true)
+      == 1);
+  REQUIRE(
+      loupe::find_next_match(matches, 1, loupe::SearchDirection::Forward, false)
+      == 3);
+  REQUIRE(
+      loupe::find_next_match(matches, 7, loupe::SearchDirection::Forward, false)
+      == 1);
 
-  REQUIRE(loupe::find_next_match(matches, 8,
-                                     loupe::SearchDirection::Backward,
-                                     true)
-          == 7);
-  REQUIRE(loupe::find_next_match(matches, 7,
-                                     loupe::SearchDirection::Backward,
-                                     true)
-          == 7);
-  REQUIRE(loupe::find_next_match(matches, 7,
-                                     loupe::SearchDirection::Backward,
-                                     false)
+  REQUIRE(
+      loupe::find_next_match(matches, 8, loupe::SearchDirection::Backward, true)
+      == 7);
+  REQUIRE(
+      loupe::find_next_match(matches, 7, loupe::SearchDirection::Backward, true)
+      == 7);
+  REQUIRE(loupe::find_next_match(matches, 7, loupe::SearchDirection::Backward,
+                                 false)
           == 3);
-  REQUIRE(loupe::find_next_match(matches, 1,
-                                     loupe::SearchDirection::Backward,
-                                     false)
+  REQUIRE(loupe::find_next_match(matches, 1, loupe::SearchDirection::Backward,
+                                 false)
           == 7);
 }
 

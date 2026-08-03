@@ -3,6 +3,7 @@ Checks: >
   *,
   -abseil-*,
   -altera-*,
+  -boost-*,
   -bugprone-throwing-static-initialization,
   -clang-analyzer-optin.core.EnumCastOutOfRange,
   -cert-err58-cpp,
@@ -22,6 +23,8 @@ Checks: >
   -readability-named-parameter,
   -zircon-*
 CheckOptions:
+  - key: misc-include-cleaner.IgnoreHeaders
+    value: '.*simdjson.*'
   - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
     value: 'true'
 WarningsAsErrors: '*'

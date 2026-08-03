@@ -1,6 +1,8 @@
 #include "line_frame.hpp"
+#include "loupe/scroll.hpp"
 
 #include <algorithm>
+#include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/node.hpp>
 #include <ftxui/screen/box.hpp>
 #include <ftxui/screen/screen.hpp>

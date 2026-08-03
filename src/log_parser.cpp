@@ -1,7 +1,9 @@
 #include "loupe/log_parser.hpp"
 
-#include <simdjson.h>
+#include <cstddef>
+#include <ios>
 
+#include "loupe/log_message.hpp"
 #include "loupe/structured_text.hpp"
 
 #include <algorithm>
@@ -9,6 +11,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <simdjson.h>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -79,10 +82,9 @@ std::string trim_copy(std::string_view text) {
 
 std::string lower_copy(std::string_view text) {
   std::string lowered{text};
-  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                 [](unsigned char value) {
-                   return static_cast<char>(std::tolower(value));
-                 });
+  std::ranges::transform(lowered, lowered.begin(), [](unsigned char value) {
+    return static_cast<char>(std::tolower(value));
+  });
   return lowered;
 }
 
@@ -108,24 +110,21 @@ void append_non_empty(std::vector<std::string> &parts, std::string value) {
 }
 
 std::string normalize_role(std::string_view raw_role) {
-  const std::string role = lower_copy(trim_copy(raw_role));
+  std::string role = lower_copy(trim_copy(raw_role));
   if (role.empty()) {
     return "unknown";
   }
 
-  if (role.find("assistant") != std::string::npos) {
+  if (role.contains("assistant")) {
     return "assistant";
   }
-  if (role.find("system") != std::string::npos
-      || role.find("developer") != std::string::npos) {
+  if (role.contains("system") || role.contains("developer")) {
     return "system";
   }
-  if (role.find("user") != std::string::npos
-      || role.find("human") != std::string::npos) {
+  if (role.contains("user") || role.contains("human")) {
     return "user";
   }
-  if (role.find("tool") != std::string::npos
-      || role.find("function") != std::string::npos) {
+  if (role.contains("tool") || role.contains("function")) {
     return "tool";
   }
 
@@ -348,7 +347,7 @@ std::string call_arguments(element value) {
 }
 
 std::string display_call_arguments(std::string_view args) {
-  const std::string trimmed = trim_copy(args);
+  std::string trimmed = trim_copy(args);
   if (trimmed.size() <= kMultilineToolArgumentThreshold) {
     return trimmed;
   }
@@ -366,9 +365,9 @@ std::string call_id(element value) {
 }
 
 std::string format_tool_call(element value, std::string_view prefix) {
-  std::string name = call_name(value);
-  std::string args = call_arguments(value);
-  std::string id = call_id(value);
+  const std::string name = call_name(value);
+  const std::string args = call_arguments(value);
+  const std::string id = call_id(value);
 
   std::string formatted{prefix};
   if (!name.empty()) {
@@ -429,7 +428,7 @@ std::vector<std::string> tool_annotations(element value) {
 
 LogMessage message_from_object(element value, std::size_t source_line) {
   const std::string raw_role = first_field_to_text(value, kRolePointers, 0);
-  std::string raw_type = field_to_text(value, "/type", 0);
+  const std::string raw_type = field_to_text(value, "/type", 0);
   const TextField content = first_text_field(value, kContentPointers, 0);
   LogMessage message{
       .role = normalize_role(raw_role),
@@ -487,7 +486,7 @@ append_element(element value, ParseResult &result, std::size_t source_line) {
 bool parse_json_document(std::string_view content, ParseResult &result,
                          std::size_t source_line, std::string *error_message) {
   simdjson::dom::parser parser;
-  simdjson::padded_string json{content};
+  const simdjson::padded_string json{content};
   element root;
   const auto error = parser.parse(json).get(root);
   if (error) {
@@ -537,7 +536,7 @@ ParseResult parse_log_content(std::string_view content) {
   ParseResult result;
   const std::string trimmed = trim_copy(content);
   if (trimmed.empty()) {
-    result.errors.push_back("input is empty");
+    result.errors.emplace_back("input is empty");
     return result;
   }
 
@@ -558,7 +557,7 @@ ParseResult parse_log_content(std::string_view content) {
 }
 
 ParseResult parse_log_file(const std::filesystem::path &path) {
-  std::ifstream input{path, std::ios::binary};
+  const std::ifstream input{path, std::ios::binary};
   if (!input) {
     return ParseResult{
         .messages = {},

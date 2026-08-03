@@ -1,13 +1,15 @@
 #include "loupe/log_format.hpp"
 #include "loupe/message_projection.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 TEST_CASE("parse explicit log format names", "[session_ir]") {
@@ -49,13 +51,11 @@ TEST_CASE("select active branch from parent-linked records", "[session_ir]") {
   session.active_leaf_id = "missing";
   REQUIRE(loupe::select_conversation_records(session).empty());
   const auto diagnostics = loupe::validate_session(session);
-  REQUIRE(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const loupe::Diagnostic &diagnostic) {
-                        return diagnostic.code
-                                == loupe::DiagnosticCode::MissingParent
-                            && diagnostic.message.find("active conversation")
-                                   != std::string::npos;
-                      }));
+  REQUIRE(
+      std::ranges::any_of(diagnostics, [](const loupe::Diagnostic &diagnostic) {
+        return diagnostic.code == loupe::DiagnosticCode::MissingParent
+            && diagnostic.message.contains("active conversation");
+      }));
 }
 
 TEST_CASE("navigation parent can explicitly override a native edge with root",
@@ -142,8 +142,7 @@ TEST_CASE("project structured events into display messages", "[session_ir]") {
   REQUIRE(messages.front().content == "Checking.");
   REQUIRE(messages.front().source_line == 7);
   REQUIRE(messages.front().annotations.size() == 1);
-  REQUIRE(messages.front().annotations.front().find("call bash")
-          != std::string::npos);
+  REQUIRE(messages.front().annotations.front().contains("call bash"));
 }
 
 TEST_CASE("hide unknown content blocks unless explicitly requested",
@@ -180,8 +179,7 @@ TEST_CASE("hide unknown content blocks unless explicitly requested",
   const auto messages_with_unknown = loupe::make_display_messages(
       session, loupe::DisplayOptions{.show_unknown = true});
   REQUIRE(messages_with_unknown.size() == 1);
-  REQUIRE(messages_with_unknown.front().content.find("cipher")
-          != std::string::npos);
+  REQUIRE(messages_with_unknown.front().content.contains("cipher"));
 }
 
 TEST_CASE("content parsing includes shared semantic validation",
@@ -191,11 +189,10 @@ TEST_CASE("content parsing includes shared semantic validation",
 {"type":"message","id":"a1","parentId":null,"timestamp":"2026-07-23T00:00:01Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"","name":"read","arguments":{}}]}})",
       loupe::LogFormat::Pi);
 
-  REQUIRE(std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(),
-                      [](const loupe::Diagnostic &diagnostic) {
-                        return diagnostic.code
-                            == loupe::DiagnosticCode::EmptyCallId;
-                      }));
+  REQUIRE(std::ranges::any_of(
+      parsed.diagnostics, [](const loupe::Diagnostic &diagnostic) {
+        return diagnostic.code == loupe::DiagnosticCode::EmptyCallId;
+      }));
 }
 
 TEST_CASE("usage after a hidden event stays attached to the visible turn",
@@ -238,6 +235,5 @@ TEST_CASE("usage after a hidden event stays attached to the visible turn",
   REQUIRE(messages.size() == 1);
   REQUIRE(messages.front().content == "visible answer");
   REQUIRE(messages.front().annotations.size() == 1);
-  REQUIRE(messages.front().annotations.front().find("input=12")
-          != std::string::npos);
+  REQUIRE(messages.front().annotations.front().contains("input=12"));
 }

@@ -1,14 +1,18 @@
 #include <algorithm>
-#include <argum/argum.h>
+#include <argum/data.h>
+#include <argum/parser.h>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <ftxui/component/app.hpp>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/event.hpp>
 #include <ftxui/component/mouse.hpp>
+#include <ftxui/component/task.hpp>
 #include <ftxui/dom/elements.hpp>
+#include <ftxui/screen/box.hpp>
 #include <ftxui/screen/color.hpp>
 #include <ftxui/screen/string.hpp>
 #include <ftxui/screen/terminal.hpp>
@@ -22,11 +26,13 @@
 
 #include "line_frame.hpp"
 #include "loupe/log_format.hpp"
+#include "loupe/log_message.hpp"
 #include "loupe/log_parser.hpp"
 #include "loupe/markdown_text.hpp"
 #include "loupe/message_projection.hpp"
 #include "loupe/scroll.hpp"
 #include "loupe/search.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 #include "loupe/structured_text.hpp"
 #include "loupe/synchronized_output.hpp"
@@ -144,13 +150,15 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                  .help("show this help message and exit")
                  .handler([&]() {
                    std::cout << parser.formatHelp(program_name);
-                   std::exit(EXIT_SUCCESS);
+                   // Safe: option handling runs before any worker threads.
+                   std::exit(EXIT_SUCCESS); // NOLINT(concurrency-mt-unsafe)
                  }));
   parser.add(Argum::Option("--version")
                  .help("show program's version number and exit")
                  .handler([]() {
                    std::cout << "loupe " << LOUPE_VERSION << '\n';
-                   std::exit(EXIT_SUCCESS);
+                   // Safe: option handling runs before any worker threads.
+                   std::exit(EXIT_SUCCESS); // NOLINT(concurrency-mt-unsafe)
                  }));
   parser.add(Argum::Option("--format", "-f")
                  .help("log format: pi, codex, codex-exec, claudecode, or "
@@ -254,7 +262,7 @@ contains_case_insensitive(std::string_view haystack, std::string_view needle) {
 
   const std::string lower_haystack = lowercase_copy(haystack);
   const std::string lower_needle = lowercase_copy(needle);
-  return lower_haystack.find(lower_needle) != std::string::npos;
+  return lower_haystack.contains(lower_needle);
 }
 
 bool is_log_candidate(const std::filesystem::path &path) {
@@ -417,11 +425,11 @@ void refresh_browser(BrowserState &state) {
     }
   }
 
-  std::sort(state.entries.begin(), state.entries.end(),
-            [](const BrowserEntry &left, const BrowserEntry &right) {
-              return lowercase_copy(left.display_path)
-                   < lowercase_copy(right.display_path);
-            });
+  std::ranges::sort(state.entries,
+                    [](const BrowserEntry &left, const BrowserEntry &right) {
+                      return lowercase_copy(left.display_path)
+                           < lowercase_copy(right.display_path);
+                    });
 
   apply_browser_filter(state);
   state.status = skipped_entries ? "some entries were skipped" : "";
@@ -557,7 +565,7 @@ load_viewer_state(const std::filesystem::path &path, loupe::LogFormat format) {
 constexpr std::size_t kTabWidth = 8;
 
 std::string expand_tabs(std::string_view text) {
-  if (text.find('\t') == std::string_view::npos) {
+  if (!text.contains('\t')) {
     return std::string{text};
   }
 
@@ -1436,8 +1444,7 @@ std::size_t search_focus_row(const AppState &state, std::string_view query,
                              int viewport_rows) {
   if (query.empty()
       || state.selected >= state.message_rows.size()
-      || !std::binary_search(state.search_matches.begin(),
-                             state.search_matches.end(), state.selected)) {
+      || !std::ranges::binary_search(state.search_matches, state.selected)) {
     return kNoRow;
   }
   const auto [first_row, end_row] = state.message_rows[state.selected];
@@ -1565,7 +1572,7 @@ ftxui::Element render_browser_entry(const BrowserEntry &entry, bool selected) {
   using namespace ftxui;
 
   const Color path_color = selected ? Color::MagentaLight : Color::GrayLight;
-  Element block = vbox({
+  const Element block = vbox({
       text(entry.display_path) | color(path_color),
       text(entry.modified_label) | color(Color::GrayDark),
   });
@@ -1653,16 +1660,17 @@ ftxui::Element render_browser(BrowserState &state) {
                            | xflex_shrink);
   }
 
-  Element help = state.search_active
-                   ? hbox({
-                         text("/") | bold | color(Color::CyanLight),
-                         text(state.search_input) | color(Color::White),
-                         text("  enter filter  esc cancel  backspace edit")
-                             | color(Color::GrayDark),
-                     })
-                   : text("j/k move  PgUp/Dn  g/G first/last  / find  "
-                          "enter open  r refresh  q quit")
-                         | color(Color::GrayDark);
+  const Element help =
+      state.search_active
+          ? hbox({
+                text("/") | bold | color(Color::CyanLight),
+                text(state.search_input) | color(Color::White),
+                text("  enter filter  esc cancel  backspace edit")
+                    | color(Color::GrayDark),
+            })
+          : text("j/k move  PgUp/Dn  g/G first/last  / find  "
+                 "enter open  r refresh  q quit")
+                | color(Color::GrayDark);
 
   return vbox({
              hbox(std::move(status_items)),
@@ -1820,8 +1828,7 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
       const bool selected_message = message_index == state.selected;
       const bool current_search_match =
           selected_message
-          && std::binary_search(state.search_matches.begin(),
-                                state.search_matches.end(), message_index);
+          && std::ranges::binary_search(state.search_matches, message_index);
       const std::size_t source_row =
           pin_selected_header && selected_message && row == selection_bar_row
               ? state.message_rows[message_index].first
@@ -1920,14 +1927,15 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
   }
   help_text += "  q quit";
 
-  Element help = state.search_active
-                   ? hbox({
-                         text("/") | bold | color(Color::CyanLight),
-                         text(state.search_input) | color(Color::White),
-                         text("  enter search  esc cancel  backspace edit")
-                             | color(Color::GrayDark),
-                     })
-                   : text(help_text) | color(Color::GrayDark);
+  const Element help =
+      state.search_active
+          ? hbox({
+                text("/") | bold | color(Color::CyanLight),
+                text(state.search_input) | color(Color::White),
+                text("  enter search  esc cancel  backspace edit")
+                    | color(Color::GrayDark),
+            })
+          : text(help_text) | color(Color::GrayDark);
 
   const bool show_message_overview =
       !state.show_diagnostics && !state.parsed.messages.empty();
@@ -1950,7 +1958,7 @@ ftxui::Element render(AppState &state, bool can_return_to_browser) {
   footer_items.push_back(text(" "));
   footer_items.push_back(loupe::scroll_progress_indicator(state.scroll)
                          | color(Color::GrayLight));
-  Element footer = hbox(std::move(footer_items));
+  const Element footer = hbox(std::move(footer_items));
 
   Element scroll_content = vbox(std::move(rows));
   if (!show_message_overview) {
@@ -2223,7 +2231,7 @@ bool handle_app_event(ApplicationState &state, ftxui::Event event,
 
 std::filesystem::path current_directory_path() {
   std::error_code error;
-  const auto current = std::filesystem::current_path(error);
+  auto current = std::filesystem::current_path(error);
   if (!error) {
     return current;
   }
@@ -2238,38 +2246,45 @@ bool is_directory_path(const std::filesystem::path &path) {
 } // namespace
 
 int main(int argc, char **argv) {
-  const CliParseResult cli = parse_cli_args(argc, argv);
-  if (!cli.run) {
-    return cli.exit_code;
+  try {
+    const CliParseResult cli = parse_cli_args(argc, argv);
+    if (!cli.run) {
+      return cli.exit_code;
+    }
+
+    const bool path_was_omitted = cli.options.path.empty();
+    const std::filesystem::path start_path =
+        path_was_omitted ? current_directory_path() : cli.options.path;
+
+    ApplicationState state;
+    // parse_cli_args fills in Auto when --format is absent; value_or keeps
+    // this access safe even if that invariant ever changes.
+    state.format = cli.options.format.value_or(loupe::LogFormat::Auto);
+    if (path_was_omitted || is_directory_path(start_path)) {
+      state.browser.root = start_path;
+      state.browser_available = true;
+      state.showing_browser = true;
+      refresh_browser(state.browser);
+    } else {
+      state.viewer = load_viewer_state(start_path, state.format);
+    }
+
+    auto screen = ftxui::App::Fullscreen();
+    screen.TrackMouse(true);
+    const ftxui::Closure quit = screen.ExitLoopClosure();
+
+    auto component = ftxui::Renderer([&] { return render_app(state); });
+    component |= ftxui::CatchEvent([&](ftxui::Event event) {
+      return handle_app_event(state, std::move(event), quit);
+    });
+
+    {
+      const loupe::ScopedSynchronizedOutput synchronized_output(std::cout);
+      screen.Loop(component);
+    }
+    return EXIT_SUCCESS;
+  } catch (const std::exception &error) {
+    std::cerr << "loupe: " << error.what() << '\n';
+    return EXIT_FAILURE;
   }
-
-  const bool path_was_omitted = cli.options.path.empty();
-  const std::filesystem::path start_path =
-      path_was_omitted ? current_directory_path() : cli.options.path;
-
-  ApplicationState state;
-  state.format = *cli.options.format;
-  if (path_was_omitted || is_directory_path(start_path)) {
-    state.browser.root = start_path;
-    state.browser_available = true;
-    state.showing_browser = true;
-    refresh_browser(state.browser);
-  } else {
-    state.viewer = load_viewer_state(start_path, state.format);
-  }
-
-  auto screen = ftxui::App::Fullscreen();
-  screen.TrackMouse(true);
-  const ftxui::Closure quit = screen.ExitLoopClosure();
-
-  auto component = ftxui::Renderer([&] { return render_app(state); });
-  component |= ftxui::CatchEvent([&](ftxui::Event event) {
-    return handle_app_event(state, std::move(event), quit);
-  });
-
-  {
-    loupe::ScopedSynchronizedOutput synchronized_output(std::cout);
-    screen.Loop(component);
-  }
-  return EXIT_SUCCESS;
 }

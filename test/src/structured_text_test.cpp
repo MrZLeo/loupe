@@ -63,7 +63,6 @@ TEST_CASE("normalize line continuations in plain text", "[structured_text]") {
 }
 
 TEST_CASE("leave plain text alone", "[structured_text]") {
-  REQUIRE(
-      loupe::format_structured_text("Hotel Names:\nRiverside View Hotel")
-      == "Hotel Names:\nRiverside View Hotel");
+  REQUIRE(loupe::format_structured_text("Hotel Names:\nRiverside View Hotel")
+          == "Hotel Names:\nRiverside View Hotel");
 }

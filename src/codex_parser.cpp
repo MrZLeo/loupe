@@ -1,18 +1,23 @@
+#include "loupe/log_format.hpp"
+#include "loupe/session_ir.hpp"
 #include "session_parser_internal.hpp"
 
 #include "json_helpers.hpp"
 #include "jsonl_reader.hpp"
 
-#include <simdjson.h>
+#include <cstddef>
+#include <cstdint>
 
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <simdjson.h>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace loupe::detail {
@@ -168,7 +173,7 @@ bool append_content_value(element value, std::vector<ContentBlock> &content) {
     return true;
   }
 
-  content.push_back(UnknownContent{
+  content.emplace_back(UnknownContent{
       .native_type = "content",
       .json = json_text(value),
   });
@@ -254,7 +259,7 @@ void parse_response_reasoning(element payload, RecordIR &record) {
 
 std::pair<std::string, bool> normalize_json(std::string_view value) {
   simdjson::dom::parser parser;
-  simdjson::padded_string padded{value};
+  const simdjson::padded_string padded{value};
   element parsed;
   if (parser.parse(padded).get(parsed)) {
     return {std::string{value}, false};
@@ -439,7 +444,7 @@ void parse_tool_search_output(element payload, RecordIR &record,
   }
 
   const std::string tools = json_at(payload, "/tools");
-  result.output.push_back(UnknownContent{
+  result.output.emplace_back(UnknownContent{
       .native_type = "tool_search_results",
       .json = tools.empty() ? json_text(payload) : tools,
   });
@@ -578,7 +583,7 @@ void append_legacy_images(element payload, std::string_view pointer,
   for (const auto image : images) {
     std::string_view url;
     if (!image.get_string().get(url)) {
-      content.push_back(ImageContent{
+      content.emplace_back(ImageContent{
           .mime_type = {},
           .url = std::string{url},
           .inline_data = false,
@@ -600,7 +605,7 @@ void save_legacy_message(element payload, std::string_view subtype,
   };
 
   if (const auto text = string_at(payload, "/message"); text) {
-    message.content.push_back(TextContent{.text = *text});
+    message.content.emplace_back(TextContent{.text = *text});
   }
   if (!is_agent) {
     append_legacy_images(payload, "/images", message.content);
@@ -933,7 +938,7 @@ SessionParseResult parse_codex_rollout(std::string_view content) {
   JsonlLine line;
 
   while (reader.next(line)) {
-    simdjson::padded_string padded{line.json};
+    const simdjson::padded_string padded{line.json};
     element document;
     const auto error = parser.parse(padded).get(document);
     if (error) {

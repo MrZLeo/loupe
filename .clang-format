@@ -1,5 +1,6 @@
 ---
 BasedOnStyle: LLVM
+QualifierAlignment: Left
 BreakTemplateDeclarations: Yes
 BreakBinaryOperations: RespectPrecedence
 BreakBeforeBinaryOperators: NonAssignment

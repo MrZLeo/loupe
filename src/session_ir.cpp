@@ -1,6 +1,7 @@
 #include "loupe/session_ir.hpp"
 
 #include <algorithm>
+#include <string_view>
 
 namespace loupe {
 
@@ -23,10 +24,9 @@ std::string_view role_name(Role role) {
 }
 
 bool SessionParseResult::has_fatal_error() const {
-  return std::any_of(diagnostics.begin(), diagnostics.end(),
-                     [](const Diagnostic &diagnostic) {
-                       return diagnostic.severity == DiagnosticSeverity::Fatal;
-                     });
+  return std::ranges::any_of(diagnostics, [](const Diagnostic &diagnostic) {
+    return diagnostic.severity == DiagnosticSeverity::Fatal;
+  });
 }
 
 } // namespace loupe

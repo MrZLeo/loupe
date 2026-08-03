@@ -1,7 +1,10 @@
+#include "loupe/log_format.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <variant>
 
 TEST_CASE("parse Codex rollout records into semantic events",

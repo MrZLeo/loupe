@@ -1,8 +1,10 @@
 #include "loupe/markdown_text.hpp"
 
 #include <cctype>
+#include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace loupe {
@@ -346,7 +348,7 @@ bool parse_heading(std::string_view line, MarkdownBlock &block) {
     return false;
   }
 
-  std::string content = trim_copy(line.substr(level));
+  const std::string content = trim_copy(line.substr(level));
   block.kind = MarkdownBlockKind::Heading;
   block.level = static_cast<int>(level);
   block.spans = parse_inline(content);

@@ -135,8 +135,7 @@ TEST_CASE("parse none.json fixture when present", "[log_parser]") {
   REQUIRE(parsed.errors.empty());
   REQUIRE(parsed.messages.size() == 26);
   REQUIRE(parsed.messages[0].role == "system");
-  REQUIRE(parsed.messages[0].content.find("AI language model")
-          != std::string::npos);
+  REQUIRE(parsed.messages[0].content.contains("AI language model"));
   REQUIRE(parsed.messages[2].role == "assistant");
   REQUIRE(parsed.messages[2].annotations.size() == 1);
   REQUIRE(

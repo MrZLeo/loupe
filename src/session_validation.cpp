@@ -1,11 +1,17 @@
+#include "loupe/log_format.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <numeric>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace loupe {
@@ -152,7 +158,7 @@ select_conversation_records(const SessionIR &session,
       || session.format == LogFormat::CodexExec
       || session.format == LogFormat::Generic) {
     std::vector<std::size_t> all(session.records.size());
-    std::iota(all.begin(), all.end(), std::size_t{0});
+    std::ranges::iota(all, std::size_t{0});
     return all;
   }
 
@@ -170,7 +176,7 @@ select_conversation_records(const SessionIR &session,
     selected_leaf = *session.active_leaf_id;
   } else {
     std::vector<std::size_t> all(session.records.size());
-    std::iota(all.begin(), all.end(), std::size_t{0});
+    std::ranges::iota(all, std::size_t{0});
     return all;
   }
 
@@ -194,7 +200,7 @@ select_conversation_records(const SessionIR &session,
     current = *parent;
   }
 
-  std::reverse(reversed.begin(), reversed.end());
+  std::ranges::reverse(reversed);
   return reversed;
 }
 

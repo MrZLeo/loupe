@@ -1,5 +1,6 @@
 #include "loupe/format_detector.hpp"
 
+#include "loupe/log_format.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -61,11 +62,10 @@ TEST_CASE("detector anchors on the first record", "[format]") {
 }
 
 TEST_CASE("detector skips malformed lines", "[format]") {
-  const std::string damaged =
-      "{not json\n"
-      "\n"
-      "   \n"
-      + kCodexExecStream;
+  const std::string damaged = "{not json\n"
+                              "\n"
+                              "   \n"
+                            + kCodexExecStream;
   REQUIRE(loupe::detect_log_format(damaged) == loupe::LogFormat::CodexExec);
 }
 
@@ -82,14 +82,12 @@ TEST_CASE("detector uses structure when the type is foreign", "[format]") {
 
 TEST_CASE("detector refuses ambiguous or unknown content", "[format]") {
   REQUIRE_FALSE(loupe::detect_log_format("").has_value());
-  REQUIRE_FALSE(loupe::detect_log_format("{\"foo\":1}\n{\"bar\":2}\n")
-                    .has_value());
-  // Legacy generic JSONL stays explicit: the lossy path is never guessed.
   REQUIRE_FALSE(
-      loupe::detect_log_format(
-          R"({"role":"user","content":"hi"})"
-          "\n")
-          .has_value());
+      loupe::detect_log_format("{\"foo\":1}\n{\"bar\":2}\n").has_value());
+  // Legacy generic JSONL stays explicit: the lossy path is never guessed.
+  REQUIRE_FALSE(loupe::detect_log_format(R"({"role":"user","content":"hi"})"
+                                         "\n")
+                    .has_value());
   // A lone weak vocabulary hit is not decisive.
   REQUIRE_FALSE(
       loupe::detect_log_format("{\"type\":\"message\"}\n").has_value());
@@ -99,8 +97,8 @@ TEST_CASE("detector refuses ambiguous or unknown content", "[format]") {
 }
 
 TEST_CASE("auto format parses through the session entry point", "[format]") {
-  auto parsed = loupe::parse_session_content(kCodexExecStream,
-                                             loupe::LogFormat::Auto);
+  auto parsed =
+      loupe::parse_session_content(kCodexExecStream, loupe::LogFormat::Auto);
   REQUIRE(parsed.session.format == loupe::LogFormat::CodexExec);
   REQUIRE_FALSE(parsed.has_fatal_error());
 }
@@ -112,7 +110,7 @@ TEST_CASE("undetectable content is fatal with guidance", "[format]") {
   REQUIRE(parsed.session.format == loupe::LogFormat::Auto);
   bool mentions_format_flag = false;
   for (const auto &diagnostic : parsed.diagnostics) {
-    if (diagnostic.message.find("--format") != std::string::npos) {
+    if (diagnostic.message.contains("--format")) {
       mentions_format_flag = true;
     }
   }

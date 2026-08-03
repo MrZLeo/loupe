@@ -1,4 +1,7 @@
+#include "loupe/log_format.hpp"
+#include "loupe/log_message.hpp"
 #include "loupe/message_projection.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -33,32 +36,30 @@ std::size_t event_count(const loupe::RecordIR &record) {
 
 const loupe::RecordIR *
 record_with_id(const loupe::SessionIR &session, std::string_view id) {
-  const auto record =
-      std::find_if(session.records.begin(), session.records.end(),
-                   [id](const loupe::RecordIR &candidate) {
-                     return candidate.native_id == id;
-                   });
+  const auto record = std::ranges::find_if(
+      session.records, [id](const loupe::RecordIR &candidate) {
+        return candidate.native_id == id;
+      });
   return record == session.records.end() ? nullptr : &*record;
 }
 
 const loupe::LogMessage *
 message_with_content(const std::vector<loupe::LogMessage> &messages,
                      std::string_view content) {
-  const auto message =
-      std::find_if(messages.begin(), messages.end(),
-                   [content](const loupe::LogMessage &candidate) {
-                     return candidate.content == content;
-                   });
+  const auto message = std::ranges::find_if(
+      messages, [content](const loupe::LogMessage &candidate) {
+        return candidate.content == content;
+      });
   return message == messages.end() ? nullptr : &*message;
 }
 
 bool has_diagnostic(const loupe::SessionParseResult &parsed,
                     loupe::DiagnosticCode code, std::size_t source_line) {
-  return std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(),
-                     [code, source_line](const loupe::Diagnostic &diagnostic) {
-                       return diagnostic.code == code
-                           && diagnostic.source_line == source_line;
-                     });
+  return std::ranges::any_of(
+      parsed.diagnostics,
+      [code, source_line](const loupe::Diagnostic &diagnostic) {
+        return diagnostic.code == code && diagnostic.source_line == source_line;
+      });
 }
 
 } // namespace
@@ -94,7 +95,7 @@ TEST_CASE("Pi v3 parsing preserves branches, tools, usage, and recovery",
   REQUIRE(call->call_id == "pi-call");
   REQUIRE(call->name == "read");
   REQUIRE(call->input_is_json);
-  REQUIRE(call->input.find("README.md") != std::string::npos);
+  REQUIRE(call->input.contains("README.md"));
 
   const auto *usage = first_event<loupe::UsageEvent>(*assistant_record);
   REQUIRE(usage != nullptr);
@@ -122,12 +123,12 @@ TEST_CASE("Pi v3 parsing preserves branches, tools, usage, and recovery",
   REQUIRE(message_with_content(displayed, "question") != nullptr);
   const auto *new_branch = message_with_content(displayed, "new branch");
   REQUIRE(new_branch != nullptr);
-  REQUIRE(std::any_of(new_branch->annotations.begin(),
-                      new_branch->annotations.end(),
-                      [](const std::string &annotation) {
-                        return annotation.find("pi::read") != std::string::npos
-                            && annotation.find("pi-call") != std::string::npos;
-                      }));
+  REQUIRE(std::ranges::any_of(new_branch->annotations,
+
+                              [](const std::string &annotation) {
+                                return annotation.contains("pi::read")
+                                    && annotation.contains("pi-call");
+                              }));
   REQUIRE(message_with_content(displayed, "inspect first") != nullptr);
   REQUIRE(message_with_content(displayed, "file contents") != nullptr);
 }
@@ -177,7 +178,7 @@ TEST_CASE("Codex response items take precedence over duplicated event messages",
   REQUIRE(call->call_id == "codex-call");
   REQUIRE(call->name == "exec_command");
   REQUIRE(call->input_is_json);
-  REQUIRE(call->input.find("\"pwd\"") != std::string::npos);
+  REQUIRE(call->input.contains("\"pwd\""));
 
   const auto *tool_result =
       first_event<loupe::ToolResultEvent>(parsed.session.records[5]);
@@ -244,16 +245,14 @@ TEST_CASE("Codex event messages remain a usable legacy fallback",
   REQUIRE(answer != nullptr);
   REQUIRE(answer->role == "assistant");
   REQUIRE(answer->annotations.size() == 2);
-  REQUIRE(std::any_of(answer->annotations.begin(), answer->annotations.end(),
-                      [](const std::string &annotation) {
-                        return annotation.find("usage input=11")
-                            != std::string::npos;
-                      }));
-  REQUIRE(std::any_of(answer->annotations.begin(), answer->annotations.end(),
-                      [](const std::string &annotation) {
-                        return annotation.find("usage input=31")
-                            != std::string::npos;
-                      }));
+  REQUIRE(std::ranges::any_of(answer->annotations,
+                              [](const std::string &annotation) {
+                                return annotation.contains("usage input=11");
+                              }));
+  REQUIRE(std::ranges::any_of(answer->annotations,
+                              [](const std::string &annotation) {
+                                return annotation.contains("usage input=31");
+                              }));
 }
 
 TEST_CASE("Claude Code parsing follows UUID branches and compact boundaries",
@@ -290,7 +289,7 @@ TEST_CASE("Claude Code parsing follows UUID branches and compact boundaries",
   REQUIRE(call->call_id == "claude-call");
   REQUIRE(call->name == "Read");
   REQUIRE(call->input_is_json);
-  REQUIRE(call->input.find("README.md") != std::string::npos);
+  REQUIRE(call->input.contains("README.md"));
 
   const auto *usage = first_event<loupe::UsageEvent>(*assistant_record);
   REQUIRE(usage != nullptr);
@@ -366,11 +365,10 @@ TEST_CASE("Claude Code continuation switches to the current session id",
   REQUIRE(parsed.session.cwd == "/new");
   REQUIRE(parsed.session.created_at == "2026-07-23T00:00:01Z");
   REQUIRE(parsed.session.active_leaf_id == "c2");
-  REQUIRE(std::none_of(parsed.diagnostics.begin(), parsed.diagnostics.end(),
-                       [](const loupe::Diagnostic &diagnostic) {
-                         return diagnostic.code
-                             == loupe::DiagnosticCode::InconsistentSessionId;
-                       }));
+  REQUIRE(std::ranges::none_of(
+      parsed.diagnostics, [](const loupe::Diagnostic &diagnostic) {
+        return diagnostic.code == loupe::DiagnosticCode::InconsistentSessionId;
+      }));
 
   const auto selected = loupe::select_conversation_records(parsed.session);
   REQUIRE(selected == std::vector<std::size_t>{0, 1, 2, 3});
@@ -394,10 +392,9 @@ TEST_CASE("Claude Code metadata records advance the active branch",
       parsed.session, loupe::DisplayOptions{.show_metadata = true});
   REQUIRE(message_with_content(displayed, "old branch") != nullptr);
   REQUIRE(message_with_content(displayed, "new branch") == nullptr);
-  REQUIRE(std::any_of(displayed.begin(), displayed.end(),
-                      [](const loupe::LogMessage &message) {
-                        return message.raw_type == "attachment";
-                      }));
+  REQUIRE(std::ranges::any_of(displayed, [](const loupe::LogMessage &message) {
+    return message.raw_type == "attachment";
+  }));
 }
 
 TEST_CASE("Claude Code rejects unconnected session id jumps",

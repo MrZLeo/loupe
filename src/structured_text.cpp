@@ -1,6 +1,7 @@
 #include "loupe/structured_text.hpp"
 
 #include <cctype>
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -37,7 +38,7 @@ bool likely_structured(std::string_view text) {
   bool in_string = false;
   char quote = '\0';
   bool escaped = false;
-  for (char value : text) {
+  for (const char value : text) {
     if (escaped) {
       escaped = false;
       continue;

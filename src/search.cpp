@@ -1,7 +1,11 @@
 #include "loupe/search.hpp"
+#include "loupe/log_message.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
+#include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -56,10 +60,10 @@ bool message_matches(const LogMessage &message, std::string_view query) {
     return true;
   }
 
-  return std::any_of(message.annotations.begin(), message.annotations.end(),
-                     [&](const std::string &annotation) {
-                       return !find_text_matches(annotation, query).empty();
-                     });
+  return std::ranges::any_of(
+      message.annotations, [&](const std::string &annotation) {
+        return !find_text_matches(annotation, query).empty();
+      });
 }
 
 std::vector<std::size_t>
@@ -105,7 +109,7 @@ find_next_match(const std::vector<std::size_t> &matches, std::size_t selected,
 
 std::optional<std::size_t>
 match_ordinal(const std::vector<std::size_t> &matches, std::size_t selected) {
-  const auto iterator = std::find(matches.begin(), matches.end(), selected);
+  const auto iterator = std::ranges::find(matches, selected);
   if (iterator == matches.end()) {
     return std::nullopt;
   }

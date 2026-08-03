@@ -1,9 +1,13 @@
+#include "loupe/log_format.hpp"
+#include "loupe/log_message.hpp"
 #include "loupe/message_projection.hpp"
+#include "loupe/session_ir.hpp"
 #include "loupe/session_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -22,8 +26,8 @@ constexpr std::string_view kTodoStream = R"jsonl(
 
 TEST_CASE("Codex Exec todo lists project to checklist messages",
           "[message_projection]") {
-  const auto parsed = loupe::parse_session_content(
-      kTodoStream, loupe::LogFormat::CodexExec);
+  const auto parsed =
+      loupe::parse_session_content(kTodoStream, loupe::LogFormat::CodexExec);
   const auto messages = loupe::make_display_messages(parsed.session);
 
   std::vector<const loupe::LogMessage *> todos;
@@ -50,10 +54,11 @@ TEST_CASE("Todo list projection keeps unparseable payloads verbatim",
   record.native_type = "item.updated";
   record.source_line = 7;
   record.events.push_back(loupe::EventIR{
-      .payload = loupe::MetadataEvent{
-          .name = "codex_exec.todo_list",
-          .value = "not json",
-      },
+      .payload =
+          loupe::MetadataEvent{
+              .name = "codex_exec.todo_list",
+              .value = "not json",
+          },
   });
   session.records.push_back(std::move(record));
 
@@ -69,10 +74,11 @@ TEST_CASE("Other metadata still follows the show_metadata option",
   loupe::RecordIR record;
   record.native_type = "item.completed";
   record.events.push_back(loupe::EventIR{
-      .payload = loupe::MetadataEvent{
-          .name = "custom",
-          .value = "hidden value",
-      },
+      .payload =
+          loupe::MetadataEvent{
+              .name = "custom",
+              .value = "hidden value",
+          },
   });
   session.records.push_back(std::move(record));
 

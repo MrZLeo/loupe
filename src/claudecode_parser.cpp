@@ -1,20 +1,24 @@
+#include "loupe/log_format.hpp"
+#include "loupe/session_ir.hpp"
 #include "session_parser_internal.hpp"
 
 #include "json_helpers.hpp"
 #include "jsonl_reader.hpp"
 
-#include <simdjson.h>
+#include <cstddef>
 
 #include <array>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <simdjson.h>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace loupe::detail {
@@ -122,7 +126,7 @@ append_tool_result_content(std::vector<ContentBlock> &output, element content) {
   case element_type::STRING: {
     std::string_view text;
     if (!content.get_string().get(text)) {
-      output.push_back(TextContent{.text = std::string{text}});
+      output.emplace_back(TextContent{.text = std::string{text}});
     }
     return;
   }
@@ -139,13 +143,13 @@ append_tool_result_content(std::vector<ContentBlock> &output, element content) {
   case element_type::OBJECT: {
     const std::string block_type = string_at(content, "/type").value_or("");
     if (block_type == "text") {
-      output.push_back(TextContent{
+      output.emplace_back(TextContent{
           .text = first_string_at(content, {"/text", "/content"}).value_or(""),
       });
     } else if (block_type == "image") {
-      output.push_back(parse_image_content(content));
+      output.emplace_back(parse_image_content(content));
     } else {
-      output.push_back(UnknownContent{
+      output.emplace_back(UnknownContent{
           .native_type =
               block_type.empty() ? std::string{"unknown"} : block_type,
           .json = json_text(content),
@@ -160,7 +164,7 @@ append_tool_result_content(std::vector<ContentBlock> &output, element content) {
   case element_type::DOUBLE:
   case element_type::BOOL:
   case element_type::BIGINT:
-    output.push_back(TextContent{.text = json_text(content)});
+    output.emplace_back(TextContent{.text = json_text(content)});
     return;
   }
 }
@@ -182,7 +186,7 @@ std::string extract_text_content(element content) {
 
     std::string result;
     for (const auto block : blocks) {
-      std::string part = extract_text_content(block);
+      const std::string part = extract_text_content(block);
       if (part.empty()) {
         continue;
       }
@@ -372,7 +376,7 @@ parse_message_record(element root, Role role, RecordIR &record,
     std::string_view text;
     if (!content.get_string().get(text)) {
       auto event = make_message(role, raw_role, provider, model);
-      event.content.push_back(TextContent{.text = std::string{text}});
+      event.content.emplace_back(TextContent{.text = std::string{text}});
       append_event(record, std::move(event));
     }
     append_usage(record, root, message);
@@ -381,7 +385,7 @@ parse_message_record(element root, Role role, RecordIR &record,
 
   if (content.type() != element_type::ARRAY) {
     auto event = make_message(role, raw_role, provider, model);
-    event.content.push_back(UnknownContent{
+    event.content.emplace_back(UnknownContent{
         .native_type = "content",
         .json = json_text(content),
     });
@@ -449,7 +453,7 @@ parse_message_record(element root, Role role, RecordIR &record,
 
       element input;
       std::string input_json;
-      bool has_input = element_at(block, "/input", input);
+      const bool has_input = element_at(block, "/input", input);
       if (has_input) {
         input_json = json_text(input);
       }

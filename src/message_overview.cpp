@@ -1,11 +1,14 @@
 #include "message_overview.hpp"
+#include "loupe/log_message.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <ftxui/screen/box.hpp>
+#include <ftxui/screen/color.hpp>
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include <ftxui/dom/node.hpp>

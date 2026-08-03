@@ -2,10 +2,13 @@
 
 #include "json_helpers.hpp"
 #include "jsonl_reader.hpp"
+#include "loupe/log_format.hpp"
 
-#include <simdjson.h>
+#include <cstddef>
+#include <optional>
 
 #include <array>
+#include <simdjson.h>
 #include <string>
 #include <string_view>
 
@@ -16,7 +19,7 @@ namespace {
 // open with a signature record (session/session_meta/thread.started) or
 // repeat their type vocabulary within a few lines.
 constexpr std::size_t kMaxLines = 64;
-constexpr std::size_t kMaxBytes = 64 * 1024;
+constexpr std::size_t kMaxBytes = std::size_t{64} * 1024;
 
 // A first-record hit is the format's signature header, so it outweighs
 // votes from later lines.

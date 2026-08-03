@@ -23,11 +23,10 @@ TEST_CASE("parse markdown inline spans", "[markdown_text]") {
 }
 
 TEST_CASE("parse markdown block types", "[markdown_text]") {
-  const auto blocks = loupe::parse_markdown_text(
-      "# Title **One**\n"
-      "- item `id`\n"
-      "1. ordered\n"
-      "> quoted *text*");
+  const auto blocks = loupe::parse_markdown_text("# Title **One**\n"
+                                                 "- item `id`\n"
+                                                 "1. ordered\n"
+                                                 "> quoted *text*");
 
   REQUIRE(blocks.size() == 4);
   REQUIRE(blocks[0].kind == loupe::MarkdownBlockKind::Heading);
@@ -46,11 +45,10 @@ TEST_CASE("parse markdown block types", "[markdown_text]") {
 }
 
 TEST_CASE("parse fenced markdown code block", "[markdown_text]") {
-  const auto blocks = loupe::parse_markdown_text(
-      "```json\n"
-      "{\"a\":1}\n"
-      "```\n"
-      "after");
+  const auto blocks = loupe::parse_markdown_text("```json\n"
+                                                 "{\"a\":1}\n"
+                                                 "```\n"
+                                                 "after");
 
   REQUIRE(blocks.size() == 2);
   REQUIRE(blocks[0].kind == loupe::MarkdownBlockKind::CodeBlock);

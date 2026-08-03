@@ -1,17 +1,18 @@
+#include "loupe/log_format.hpp"
+#include "loupe/session_ir.hpp"
 #include "session_parser_internal.hpp"
 
 #include "json_helpers.hpp"
 #include "jsonl_reader.hpp"
 
-#include <simdjson.h>
-
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <simdjson.h>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
+#include <vector>
 
 namespace loupe::detail {
 namespace {
@@ -159,7 +160,7 @@ append_basic_content(simdjson::dom::element owner, std::string_view pointer,
 
   simdjson::dom::array blocks;
   if (!content.get_array().get(blocks)) {
-    for (simdjson::dom::element block : blocks) {
+    for (const simdjson::dom::element block : blocks) {
       if (auto parsed = parse_basic_content_block(block)) {
         output.push_back(std::move(*parsed));
       }
@@ -256,7 +257,7 @@ void append_assistant_message(RecordIR &record, simdjson::dom::element message,
   }
 
   bool saw_block = false;
-  for (simdjson::dom::element block : blocks) {
+  for (const simdjson::dom::element block : blocks) {
     saw_block = true;
     const std::string block_type =
         string_at(block, "/type").value_or("unknown");

@@ -217,7 +217,8 @@ struct SessionParseResult {
 };
 
 template <typename Event>
-void append_event(RecordIR &record, Event event, std::string timestamp = {}) {
+void
+append_event(RecordIR &record, Event event, const std::string &timestamp = {}) {
   record.events.push_back(EventIR{
       .fragment_index = record.events.size(),
       .timestamp = std::move(timestamp),
