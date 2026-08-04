@@ -7,7 +7,6 @@
 #include <ios>
 #include <ostream>
 #include <sstream>
-#include <stdexcept>
 #include <streambuf>
 #include <string>
 #include <string_view>
@@ -138,20 +137,4 @@ TEST_CASE("synchronized output closes a partially written frame",
 
   REQUIRE(upstream.output
           == std::string(kBegin.substr(0, 3)) + std::string(kEnd) + '\0');
-}
-
-TEST_CASE("synchronized output flushes and restores after exceptions",
-          "[synchronized-output]") {
-  std::ostringstream output;
-
-  try {
-    const loupe::ScopedSynchronizedOutput synchronized_output(output);
-    output << "pending";
-    throw std::runtime_error("stop");
-  } catch (const std::runtime_error &error) {
-    REQUIRE(std::string_view(error.what()) == "stop");
-  }
-
-  output << "plain";
-  REQUIRE(output.str() == synchronized_frame("pending") + "plain");
 }

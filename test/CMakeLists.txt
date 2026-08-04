@@ -41,6 +41,9 @@ foreach(file ${test_sources})
   add_executable(${test_name}_Tests ${file})
 
   project_apply_cxx_standard(${test_name}_Tests PRIVATE)
+  # Test executables keep exceptions enabled: Catch2 implements SKIP() and
+  # assertion unwinding via exceptions thrown across test frames. They still
+  # link against the exception-free ${CMAKE_PROJECT_NAME} targets.
 
   if(${CMAKE_PROJECT_NAME}_BUILD_EXECUTABLE)
     set(${CMAKE_PROJECT_NAME}_TEST_LIB ${CMAKE_PROJECT_NAME}_LIB)

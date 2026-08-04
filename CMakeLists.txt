@@ -154,6 +154,23 @@ set_project_warnings(${PROJECT_NAME})
 verbose_message("Applied compiler warnings. Using standard C++${PROJECT_CXX_STANDARD}.\n")
 
 #
+# Disable C++ exceptions for all first-party targets
+#
+
+include(cmake/DisableExceptions.cmake)
+project_disable_exceptions(${PROJECT_NAME})
+if(${PROJECT_NAME}_BUILD_EXECUTABLE AND ${PROJECT_NAME}_ENABLE_UNIT_TESTING)
+  project_disable_exceptions(${PROJECT_NAME}_LIB)
+endif()
+
+if(${PROJECT_NAME}_BUILD_EXECUTABLE)
+  # Force argum into its Expected-based API so parse() reports errors via
+  # return values in both exception and no-exception builds.
+  target_compile_definitions(${PROJECT_NAME} PRIVATE ARGUM_USE_EXPECTED=1)
+endif()
+verbose_message("Disabled C++ exceptions for project targets.\n")
+
+#
 # Enable Doxygen
 #
 

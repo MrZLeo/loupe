@@ -4,7 +4,6 @@
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
-#include <exception>
 #include <filesystem>
 #include <ftxui/component/app.hpp>
 #include <ftxui/component/component.hpp>
@@ -183,10 +182,11 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                        std::filesystem::path{std::string{value}};
                  }));
 
-  try {
-    parser.parse(argc, argv);
-  } catch (const Argum::ParsingException &ex) {
-    std::cerr << ex.message() << '\n';
+  // argum runs in its Expected-based mode (ARGUM_USE_EXPECTED), so parsing
+  // errors are reported via the return value instead of exceptions.
+  const auto parse_result = parser.parse(argc, argv);
+  if (const auto parse_error = parse_result.error()) {
+    std::cerr << parse_error->message() << '\n';
     std::cerr << parser.formatUsage(program_name) << '\n';
     result.exit_code = EXIT_FAILURE;
     return result;
@@ -2246,45 +2246,40 @@ bool is_directory_path(const std::filesystem::path &path) {
 } // namespace
 
 int main(int argc, char **argv) {
-  try {
-    const CliParseResult cli = parse_cli_args(argc, argv);
-    if (!cli.run) {
-      return cli.exit_code;
-    }
-
-    const bool path_was_omitted = cli.options.path.empty();
-    const std::filesystem::path start_path =
-        path_was_omitted ? current_directory_path() : cli.options.path;
-
-    ApplicationState state;
-    // parse_cli_args fills in Auto when --format is absent; value_or keeps
-    // this access safe even if that invariant ever changes.
-    state.format = cli.options.format.value_or(loupe::LogFormat::Auto);
-    if (path_was_omitted || is_directory_path(start_path)) {
-      state.browser.root = start_path;
-      state.browser_available = true;
-      state.showing_browser = true;
-      refresh_browser(state.browser);
-    } else {
-      state.viewer = load_viewer_state(start_path, state.format);
-    }
-
-    auto screen = ftxui::App::Fullscreen();
-    screen.TrackMouse(true);
-    const ftxui::Closure quit = screen.ExitLoopClosure();
-
-    auto component = ftxui::Renderer([&] { return render_app(state); });
-    component |= ftxui::CatchEvent([&](ftxui::Event event) {
-      return handle_app_event(state, std::move(event), quit);
-    });
-
-    {
-      const loupe::ScopedSynchronizedOutput synchronized_output(std::cout);
-      screen.Loop(component);
-    }
-    return EXIT_SUCCESS;
-  } catch (const std::exception &error) {
-    std::cerr << "loupe: " << error.what() << '\n';
-    return EXIT_FAILURE;
+  const CliParseResult cli = parse_cli_args(argc, argv);
+  if (!cli.run) {
+    return cli.exit_code;
   }
+
+  const bool path_was_omitted = cli.options.path.empty();
+  const std::filesystem::path start_path =
+      path_was_omitted ? current_directory_path() : cli.options.path;
+
+  ApplicationState state;
+  // parse_cli_args fills in Auto when --format is absent; value_or keeps
+  // this access safe even if that invariant ever changes.
+  state.format = cli.options.format.value_or(loupe::LogFormat::Auto);
+  if (path_was_omitted || is_directory_path(start_path)) {
+    state.browser.root = start_path;
+    state.browser_available = true;
+    state.showing_browser = true;
+    refresh_browser(state.browser);
+  } else {
+    state.viewer = load_viewer_state(start_path, state.format);
+  }
+
+  auto screen = ftxui::App::Fullscreen();
+  screen.TrackMouse(true);
+  const ftxui::Closure quit = screen.ExitLoopClosure();
+
+  auto component = ftxui::Renderer([&] { return render_app(state); });
+  component |= ftxui::CatchEvent([&](ftxui::Event event) {
+    return handle_app_event(state, std::move(event), quit);
+  });
+
+  {
+    const loupe::ScopedSynchronizedOutput synchronized_output(std::cout);
+    screen.Loop(component);
+  }
+  return EXIT_SUCCESS;
 }
