@@ -848,7 +848,7 @@ styled_piece(std::string_view value, const StyledSegment &segment,
   } else if (highlight == HighlightKind::Match) {
     element = element | color(Color::Black) | bgcolor(Color::YellowLight);
   } else if (segment.code) {
-    element = element | color(Color::Black) | bgcolor(Color::CyanLight);
+    element = element | color(Color::CyanLight);
   } else if (segment.link) {
     element = element | color(Color::CyanLight) | underlined;
   } else {
