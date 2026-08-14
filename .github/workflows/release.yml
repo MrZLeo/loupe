@@ -149,11 +149,14 @@ jobs:
 
       - name: Configure
         shell: pwsh
+        # No Loupe_ENABLE_LTO here: MSVC /GL performs whole-program ODR
+        # checks and currently fails (LNK1000/C1001) because first-party
+        # targets define _HAS_EXCEPTIONS=0 while FTXUI does not. Re-enable
+        # after unifying exception flags across dependencies.
         run: |
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -DLoupe_ENABLE_LTO=ON `
             -DCPM_SOURCE_CACHE="$env:CPM_SOURCE_CACHE" `
             -DLoupe_ENABLE_UNIT_TESTING=ON
 
