@@ -221,6 +221,35 @@ CPMAddPackage(
     "ARGUM_NO_TESTS ON"
 )
 
+# Vendored, decompression-only static libzstd: session logs may be stored
+# as concatenated Zstandard frames (deepseek-harness session.jsonl.zstd),
+# and a pinned in-tree build keeps release binaries dependency-free on
+# macOS, Ubuntu, and MSVC.
+CPMAddPackage(
+  NAME zstd
+  GITHUB_REPOSITORY facebook/zstd
+  GIT_TAG v1.5.7
+  SOURCE_SUBDIR build/cmake
+  OPTIONS
+    "ZSTD_BUILD_PROGRAMS OFF"
+    "ZSTD_BUILD_TESTS OFF"
+    "ZSTD_BUILD_CONTRIB OFF"
+    "ZSTD_BUILD_SHARED OFF"
+    "ZSTD_BUILD_STATIC ON"
+    "ZSTD_BUILD_COMPRESSION OFF"
+    "ZSTD_BUILD_DECOMPRESSION ON"
+    "ZSTD_BUILD_DICTBUILDER OFF"
+    "ZSTD_BUILD_DEPRECATED OFF"
+    "ZSTD_LEGACY_SUPPORT OFF"
+    "ZSTD_MULTITHREAD_SUPPORT OFF"
+)
+if(TARGET libzstd_static)
+  target_include_directories(
+    libzstd_static SYSTEM
+    PUBLIC $<BUILD_INTERFACE:${zstd_SOURCE_DIR}/lib>
+  )
+endif()
+
 function(project_mark_dependency_includes_system target)
   if(NOT TARGET ${target})
     return()
@@ -236,12 +265,12 @@ function(project_mark_dependency_includes_system target)
   endif()
 endfunction()
 
-foreach(dependency_target IN ITEMS simdjson screen dom component argum)
+foreach(dependency_target IN ITEMS simdjson screen dom component argum libzstd_static)
   project_mark_dependency_includes_system(${dependency_target})
 endforeach()
 
-set(PROJECT_LIBRARY_DEPENDENCIES simdjson::simdjson)
-set(PROJECT_EXECUTABLE_DEPENDENCIES simdjson::simdjson ftxui::component argum::argum)
+set(PROJECT_LIBRARY_DEPENDENCIES simdjson::simdjson libzstd_static)
+set(PROJECT_EXECUTABLE_DEPENDENCIES simdjson::simdjson ftxui::component argum::argum libzstd_static)
 
 function(project_link_dependencies target)
   get_target_property(target_type ${target} TYPE)

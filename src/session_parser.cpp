@@ -6,6 +6,7 @@
 
 #include "loupe/session_ir.hpp"
 #include "session_parser_internal.hpp"
+#include "zstd_decode.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -239,7 +240,35 @@ parse_session_file(const std::filesystem::path &path, LogFormat format) {
     return result;
   }
 
-  SessionParseResult result = parse_session_content(buffer.str(), format);
+  std::string content = buffer.str();
+  bool dropped_torn_tail = false;
+  if (detail::looks_like_zstd(content)) {
+    // Session logs can be stored as concatenated Zstandard frames (for
+    // example deepseek-harness session.jsonl.zstd).
+    constexpr std::uint64_t kMaxDecompressedBytes =
+        std::uint64_t{512} * 1024 * 1024;
+    detail::ZstdDecodeResult decoded =
+        detail::decompress_zstd_frames(content, kMaxDecompressedBytes);
+    if (!decoded.error.empty()) {
+      SessionParseResult result;
+      result.session.format = format;
+      result.session.source_path = path;
+      detail::add_diagnostic(
+          result, DiagnosticSeverity::Fatal, DiagnosticCode::IoError,
+          "failed to decompress " + path.string() + ": " + decoded.error);
+      return result;
+    }
+    dropped_torn_tail = decoded.dropped_torn_tail;
+    content = std::move(decoded.text);
+  }
+
+  SessionParseResult result = parse_session_content(content, format);
+  if (dropped_torn_tail) {
+    detail::add_diagnostic(
+        result, DiagnosticSeverity::Warning, DiagnosticCode::IncompleteStream,
+        "ignored the incomplete final zstd frame (torn append) in "
+            + path.string());
+  }
   result.session.source_path = path;
   return result;
 }

@@ -17,6 +17,7 @@ set(sources
   src/session_validation.cpp
   src/structured_text.cpp
   src/synchronized_output.cpp
+  src/zstd_decode.cpp
 )
 
 set(exe_sources
@@ -60,4 +61,5 @@ set(test_sources
   src/session_parser_test.cpp
   src/structured_text_test.cpp
   src/synchronized_output_test.cpp
+  src/zstd_decode_test.cpp
 )

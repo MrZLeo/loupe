@@ -43,7 +43,7 @@ loupe ~/.codex/sessions/2026/07/23/rollout-....jsonl
 codex exec --json "summarize this repository" > codex-exec.jsonl
 loupe codex-exec.jsonl
 loupe ~/.claude/projects/.../session.jsonl
-loupe ~/.dsh/sessions/.../session.jsonl
+loupe ~/.dsh/sessions/.../session.jsonl.zstd
 ```
 
 `codex` and `codex-exec` are separate formats. The former reads the persisted
@@ -51,20 +51,17 @@ session rollout, while the latter reads the machine-readable stdout event
 stream produced by `codex exec --json`.
 
 DeepSeek Harness stores one append-only event stream per session under
-`~/.dsh/sessions`, compressed by default as `session.jsonl.zstd`. Decompress
-it first (or disable compression in the harness config):
-
-```sh
-zstd -dc ~/.dsh/sessions/.../session.jsonl.zstd > session.jsonl
-loupe session.jsonl
-```
-
-The parser expands packed streaming rows (`text-chunks`, `reasoning-chunks`,
-`tool-call-chunks`) back into individual `assistant/chunk` records, projects
-`user/message`, `assistant/message`, and `tool/result` surface events onto
-the conversation, and keeps the raw audit trail (`tool/call`, retries,
-turn/step lifecycle, compaction accounting) as inspectable records and
-metadata.
+`~/.dsh/sessions`, by default Zstandard-compressed as `session.jsonl.zstd`.
+Loupe decompresses zstd input transparently (detected by magic bytes, so
+extension does not matter): concatenated frames are decoded in order, each
+frame's checksum is verified before its records are shown, and an
+incomplete final frame left by a crashed append is dropped with a warning.
+The parser then expands packed streaming rows (`text-chunks`,
+`reasoning-chunks`, `tool-call-chunks`) back into individual
+`assistant/chunk` records, projects `user/message`, `assistant/message`,
+and `tool/result` surface events onto the conversation, and keeps the raw
+audit trail (`tool/call`, retries, turn/step lifecycle, compaction
+accounting) as inspectable records and metadata.
 
 A directory can be opened instead of a file. With the default auto-detection,
 each file opened from the browser is classified independently; an explicit

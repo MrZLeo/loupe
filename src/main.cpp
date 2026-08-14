@@ -270,7 +270,8 @@ bool is_log_candidate(const std::filesystem::path &path) {
   return extension == ".json"
       || extension == ".jsonl"
       || extension == ".ndjson"
-      || extension == ".log";
+      || extension == ".log"
+      || extension == ".zstd";
 }
 
 bool is_ignored_browser_directory(const std::filesystem::path &path) {
@@ -1600,8 +1601,9 @@ ftxui::Element render_browser_empty(const BrowserState &state) {
     lines.push_back(text("No log files found") | bold | color(Color::RedLight));
     lines.push_back(separatorEmpty());
     lines.push_back(
-        paragraph("Looking for .json, .jsonl, .ndjson, and .log files under "
-                  + state.root.string())
+        paragraph(
+            "Looking for .json, .jsonl, .ndjson, .log, and .zstd files under "
+            + state.root.string())
         | color(Color::YellowLight));
   } else {
     lines.push_back(text("No matches") | bold | color(Color::YellowLight));
