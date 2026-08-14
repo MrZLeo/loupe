@@ -35,6 +35,12 @@ const std::string kClaudeCodeTranscript =
     R"({"type":"assistant","sessionId":"c-1","uuid":"u-2","parentUuid":"u-1","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}})"
     "\n";
 
+const std::string kDeepseekHarnessSession =
+    R"({"type":"session","version":0,"id":"d-1","createdAt":1786700000000,"cwd":"/tmp/demo","delegationDepth":0})"
+    "\n"
+    R"({"type":"user/message","seq":0,"time":1786700001000,"data":{"id":"m-1","role":"user","content":[{"type":"text","text":"hi"}],"source":{"kind":"user"}},"surfaceOp":"append"})"
+    "\n";
+
 TEST_CASE("detector recognizes each native format", "[format]") {
   REQUIRE(loupe::detect_log_format(kPiSession) == loupe::LogFormat::Pi);
   REQUIRE(loupe::detect_log_format(kCodexRollout) == loupe::LogFormat::Codex);
@@ -42,6 +48,8 @@ TEST_CASE("detector recognizes each native format", "[format]") {
           == loupe::LogFormat::CodexExec);
   REQUIRE(loupe::detect_log_format(kClaudeCodeTranscript)
           == loupe::LogFormat::ClaudeCode);
+  REQUIRE(loupe::detect_log_format(kDeepseekHarnessSession)
+          == loupe::LogFormat::DeepseekHarness);
 }
 
 TEST_CASE("detector anchors on the first record", "[format]") {
@@ -59,6 +67,16 @@ TEST_CASE("detector anchors on the first record", "[format]") {
       + kClaudeCodeTranscript;
   REQUIRE(loupe::detect_log_format(metadata_first)
           == loupe::LogFormat::ClaudeCode);
+
+  // A deepseek-harness log without its header still votes from the
+  // slash-namespaced event vocabulary and the packed chunk rows.
+  const std::string no_header =
+      R"({"type":"reasoning-chunks","seq0":0,"time0":1786700001000,"data":{"turn":1,"step":1,"index":0,"dt":[5,5],"texts":["a","b","c"]}})"
+      "\n"
+      R"({"type":"assistant/message","seq":3,"time":1786700002000,"data":{"turn":1,"step":1,"message":{}}})"
+      "\n";
+  REQUIRE(loupe::detect_log_format(no_header)
+          == loupe::LogFormat::DeepseekHarness);
 }
 
 TEST_CASE("detector skips malformed lines", "[format]") {
@@ -94,6 +112,13 @@ TEST_CASE("detector refuses ambiguous or unknown content", "[format]") {
   // A foreign later record does not override the first-record anchor.
   const std::string mixed = kCodexExecStream + kPiSession;
   REQUIRE(loupe::detect_log_format(mixed) == loupe::LogFormat::CodexExec);
+
+  // A deepseek-harness header is not a Pi header despite sharing the
+  // `session` type: createdAt/delegationDepth discriminate it.
+  REQUIRE(loupe::detect_log_format(kDeepseekHarnessSession + kPiSession)
+          == loupe::LogFormat::DeepseekHarness);
+  REQUIRE(loupe::detect_log_format(kPiSession + kDeepseekHarnessSession)
+          == loupe::LogFormat::Pi);
 }
 
 TEST_CASE("auto format parses through the session entry point", "[format]") {

@@ -20,6 +20,9 @@ std::optional<LogFormat> parse_log_format(std::string_view value) {
   if (value == "generic") {
     return LogFormat::Generic;
   }
+  if (value == "deepseek-harness" || value == "dsh") {
+    return LogFormat::DeepseekHarness;
+  }
   if (value == "auto") {
     return LogFormat::Auto;
   }
@@ -38,6 +41,8 @@ std::string_view log_format_name(LogFormat format) {
     return "claudecode";
   case LogFormat::Generic:
     return "generic";
+  case LogFormat::DeepseekHarness:
+    return "deepseek-harness";
   case LogFormat::Auto:
     return "auto";
   }

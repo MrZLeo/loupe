@@ -82,6 +82,67 @@ bool is_pi_entry_type(std::string_view type) {
   return false;
 }
 
+// deepseek-harness event vocabulary (docs/persistence-catalog.md plus the
+// physical packed chunk rows). All types are slash-namespaced or
+// hyphen-suffixed, so they never collide with the other native formats.
+bool is_deepseek_harness_type(std::string_view type) {
+  static constexpr std::array<std::string_view, 47> kTypes{
+      "turn/start",
+      "turn/end",
+      "step/start",
+      "step/end",
+      "user/message",
+      "assistant/message",
+      "assistant/chunk",
+      "tool/call",
+      "tool/result",
+      "text-chunks",
+      "reasoning-chunks",
+      "tool-call-chunks",
+      "agent/inbox/spliced",
+      "agent-preset/selected",
+      "approval/asked",
+      "approval/decided",
+      "approval/policy",
+      "command/done",
+      "command/run",
+      "compaction/end",
+      "compaction/prune",
+      "compaction/start",
+      "compaction/summary",
+      "feedback/record",
+      "goal/change",
+      "hook/invoked",
+      "hook/result",
+      "llm/retry",
+      "llm/retry-started",
+      "permission/preset",
+      "plan/mode",
+      "request/context",
+      "request/header",
+      "sandbox/mode",
+      "schedule/change",
+      "session/end-seed",
+      "session/title",
+      "session/title-llm-request",
+      "subagent/descriptor",
+      "todo/write",
+      "tool-workflow/agent-end",
+      "tool-workflow/agent-start",
+      "tool-workflow/run-end",
+      "tool-workflow/run-start",
+      "tool/code-dispatch",
+      "tool/code-dispatch-start",
+      "web/deepseek-search-llm-request",
+  };
+  for (const auto known : kTypes) {
+    if (type == known) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool is_claudecode_type(std::string_view type) {
   static constexpr std::array<std::string_view, 16> kTypes{
       "user",
@@ -113,12 +174,14 @@ struct FormatScores {
   int codex{0};
   int codex_exec{0};
   int claudecode{0};
+  int deepseek_harness{0};
 
   int best() const {
     int best_score = pi;
     best_score = best_score < codex ? codex : best_score;
     best_score = best_score < codex_exec ? codex_exec : best_score;
-    return best_score < claudecode ? claudecode : best_score;
+    best_score = best_score < claudecode ? claudecode : best_score;
+    return best_score < deepseek_harness ? deepseek_harness : best_score;
   }
 };
 
@@ -157,8 +220,19 @@ std::optional<LogFormat> detect_log_format(std::string_view content) {
     if (is_codex_rollout_type(type)) {
       scores.codex += kStrongVote + bonus;
     }
+    if (is_deepseek_harness_type(type)) {
+      scores.deepseek_harness += kStrongVote + bonus;
+    }
     if (type == "session") {
-      scores.pi += kStrongVote + bonus;
+      // deepseek-harness also opens with a `session` header; its numeric
+      // createdAt/delegationDepth markers distinguish it from Pi's header.
+      simdjson::dom::element header_marker;
+      if (detail::element_at(document, "/createdAt", header_marker)
+          || detail::element_at(document, "/delegationDepth", header_marker)) {
+        scores.deepseek_harness += kStrongVote + bonus;
+      } else {
+        scores.pi += kStrongVote + bonus;
+      }
     } else if (is_pi_entry_type(type)) {
       scores.pi += kMediumVote;
     }
@@ -177,6 +251,12 @@ std::optional<LogFormat> detect_log_format(std::string_view content) {
         && detail::element_at(document, "/payload", payload)
         && payload.type() == simdjson::dom::element_type::OBJECT) {
       scores.codex += kWeakVote;
+    }
+    // The deepseek-harness event envelope is `{type, seq, time, data}`.
+    if (detail::element_at(document, "/seq", field)
+        && detail::element_at(document, "/time", field)
+        && detail::element_at(document, "/data", payload)) {
+      scores.deepseek_harness += kWeakVote;
     }
     if (type == "session"
         && detail::element_at(document, "/id", field)
@@ -202,6 +282,7 @@ std::optional<LogFormat> detect_log_format(std::string_view content) {
   consider(scores.codex, LogFormat::Codex);
   consider(scores.codex_exec, LogFormat::CodexExec);
   consider(scores.claudecode, LogFormat::ClaudeCode);
+  consider(scores.deepseek_harness, LogFormat::DeepseekHarness);
   if (winners != 1) {
     return std::nullopt;
   }

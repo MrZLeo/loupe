@@ -160,8 +160,8 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                    std::exit(EXIT_SUCCESS); // NOLINT(concurrency-mt-unsafe)
                  }));
   parser.add(Argum::Option("--format", "-f")
-                 .help("log format: pi, codex, codex-exec, claudecode, or "
-                       "generic (default: auto-detect)")
+                 .help("log format: pi, codex, codex-exec, claudecode, "
+                       "deepseek-harness, or generic (default: auto-detect)")
                  .handler([&](const std::string_view &value) {
                    result.options.format = loupe::parse_log_format(value);
                    if (!result.options.format) {
@@ -169,7 +169,7 @@ CliParseResult parse_cli_args(int argc, char **argv) {
                          "unsupported log format: "
                          + std::string{value}
                          + " (expected pi, codex, codex-exec, claudecode, "
-                           "generic, or auto)";
+                           "deepseek-harness, generic, or auto)";
                    }
                  }));
 

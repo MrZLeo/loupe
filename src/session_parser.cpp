@@ -168,7 +168,7 @@ parse_session_content(std::string_view content, LogFormat format) {
       detail::add_diagnostic(
           result, DiagnosticSeverity::Fatal, DiagnosticCode::FormatMismatch,
           "could not detect the log format; specify it with --format "
-          "(pi, codex, codex-exec, claudecode, or generic)");
+          "(pi, codex, codex-exec, claudecode, deepseek-harness, or generic)");
     }
   }
   switch (format) {
@@ -183,6 +183,9 @@ parse_session_content(std::string_view content, LogFormat format) {
     break;
   case LogFormat::ClaudeCode:
     result = detail::parse_claudecode_transcript(content);
+    break;
+  case LogFormat::DeepseekHarness:
+    result = detail::parse_deepseek_harness_session(content);
     break;
   case LogFormat::Generic:
     result = detail::parse_generic_session(content);

@@ -12,6 +12,7 @@ enum class LogFormat {
   ClaudeCode,
   Generic,
   CodexExec,
+  DeepseekHarness,
   // Not an input format: ask the detector to classify the content.
   Auto,
 };

@@ -29,11 +29,12 @@ fatal diagnostic asking for an explicit `--format`.
 
 | `--format` | Input |
 | --- | --- |
-| `auto` (default) | Detect `pi`, `codex`, `codex-exec`, or `claudecode` from the first records |
+| `auto` (default) | Detect `pi`, `codex`, `codex-exec`, `claudecode`, or `deepseek-harness` from the first records |
 | `pi` | Pi session JSONL, including parent-linked branches |
 | `codex` | Codex session rollout JSONL |
 | `codex-exec` | `codex exec --json` event-stream JSONL |
 | `claudecode` | Claude Code transcript JSONL |
+| `deepseek-harness` | DeepSeek Harness session event JSONL (format v0) |
 | `generic` | Loupe's legacy generic JSON/JSONL parser |
 
 ```sh
@@ -42,11 +43,28 @@ loupe ~/.codex/sessions/2026/07/23/rollout-....jsonl
 codex exec --json "summarize this repository" > codex-exec.jsonl
 loupe codex-exec.jsonl
 loupe ~/.claude/projects/.../session.jsonl
+loupe ~/.dsh/sessions/.../session.jsonl
 ```
 
 `codex` and `codex-exec` are separate formats. The former reads the persisted
 session rollout, while the latter reads the machine-readable stdout event
 stream produced by `codex exec --json`.
+
+DeepSeek Harness stores one append-only event stream per session under
+`~/.dsh/sessions`, compressed by default as `session.jsonl.zstd`. Decompress
+it first (or disable compression in the harness config):
+
+```sh
+zstd -dc ~/.dsh/sessions/.../session.jsonl.zstd > session.jsonl
+loupe session.jsonl
+```
+
+The parser expands packed streaming rows (`text-chunks`, `reasoning-chunks`,
+`tool-call-chunks`) back into individual `assistant/chunk` records, projects
+`user/message`, `assistant/message`, and `tool/result` surface events onto
+the conversation, and keeps the raw audit trail (`tool/call`, retries,
+turn/step lifecycle, compaction accounting) as inspectable records and
+metadata.
 
 A directory can be opened instead of a file. With the default auto-detection,
 each file opened from the browser is classified independently; an explicit
@@ -66,6 +84,7 @@ native JSONL
     +-- Codex session parser
     +-- Codex Exec parser
     +-- Claude Code parser
+    +-- DeepSeek Harness parser
     +-- Generic parser
             |
             v
