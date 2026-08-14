@@ -159,7 +159,9 @@ select_conversation_records(const SessionIR &session,
       || session.format == LogFormat::DeepseekHarness
       || session.format == LogFormat::Generic) {
     std::vector<std::size_t> all(session.records.size());
-    std::ranges::iota(all, std::size_t{0});
+    // std::iota: libc++ only declares std::ranges::iota when targeting
+    // macOS 13.3+, but the release build targets macOS 13.0.
+    std::iota(all.begin(), all.end(), std::size_t{0});
     return all;
   }
 
@@ -177,7 +179,7 @@ select_conversation_records(const SessionIR &session,
     selected_leaf = *session.active_leaf_id;
   } else {
     std::vector<std::size_t> all(session.records.size());
-    std::ranges::iota(all, std::size_t{0});
+    std::iota(all.begin(), all.end(), std::size_t{0});
     return all;
   }
 
